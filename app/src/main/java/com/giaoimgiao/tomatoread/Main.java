@@ -466,14 +466,13 @@ public class Main implements IXposedHookLoadPackage {
                                                 Object b = XposedHelpers.callMethod(req, "body");
                                                 if (b == null) b = XposedHelpers.callMethod(req, "getBody");
                                                 if (b != null) {
-                                                    java.io.InputStream is = (java.io.InputStream) XposedHelpers.callMethod(b, "in");
-                                                    java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-                                                    byte[] tmp = new byte[512];
-                                                    int n;
-                                                    while ((n = is.read(tmp)) > 0 && bos.size() < 4096) bos.write(tmp, 0, n);
-                                                    String content = new String(bos.toByteArray(), "UTF-8");
-                                                    if (content.length() > 1500) content = content.substring(0, 1500) + "...";
-                                                    log("[CRONET-REQ-BODY] " + url.substring(0, Math.min(url.length(), 120)) + " -> " + content);
+                                                    String content = dumpReqBytes(b);
+                                                    if (content != null) {
+                                                        if (content.length() > 1500) content = content.substring(0, 1500) + "...";
+                                                        log("[CRONET-REQ-BODY] " + url.substring(0, Math.min(url.length(), 120)) + " -> " + content);
+                                                    } else {
+                                                        log("[CRONET-REQ-BODY] dump失败 b=" + b.getClass().getName());
+                                                    }
                                                 }
                                             } catch (Throwable ignored) {
                                             }
@@ -875,6 +874,30 @@ public class Main implements IXposedHookLoadPackage {
         }
     }
 
+    /** v2.5: 从 TypedByteArray 提取请求体内容(getBytes 优先, 字段 bytes 次之, in() 流兜底) */
+    private static String dumpReqBytes(Object b) {
+        try {
+            byte[] d = (byte[]) XposedHelpers.callMethod(b, "getBytes");
+            if (d != null && d.length > 0) return new String(d, "UTF-8");
+        } catch (Throwable ignored) {
+        }
+        try {
+            byte[] d = (byte[]) XposedHelpers.getObjectField(b, "bytes");
+            if (d != null && d.length > 0) return new String(d, "UTF-8");
+        } catch (Throwable ignored) {
+        }
+        try {
+            java.io.InputStream is = (java.io.InputStream) XposedHelpers.callMethod(b, "in");
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] tmp = new byte[512];
+            int n;
+            while ((n = is.read(tmp)) > 0 && bos.size() < 4096) bos.write(tmp, 0, n);
+            if (bos.size() > 0) return new String(bos.toByteArray(), "UTF-8");
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
     private static boolean getFieldBool(Object o, String name) {
         try {
             Object v = XposedHelpers.getObjectField(o, name);
@@ -1212,10 +1235,16 @@ public class Main implements IXposedHookLoadPackage {
                                             " toneId=" + toneId + " isLocalBook=" + isLocal +
                                             " taskId=" + taskId + " blockReaderSentencePart=" + block);
                                     // v2.4 实验: bookId=0(本地书hex溢出) 服务端拒绝 -> 改成 itemId 试试服务端是否接受
-                                    if (bookId == 0L && itemId != 0L) {
-                                        XposedHelpers.setLongField(req, "bookId", itemId);
-                                        log("[STREAM-REQ] 实验: bookId=0 -> 改为 itemId=" + itemId);
-                                    }
+if (bookId == 0L && itemId != 0L) {
+XposedHelpers.setLongField(req, "bookId", itemId);
+log("[STREAM-REQ] 实验: bookId=0 -> 改为 itemId=" + itemId);
+}
+// v2.5.1 实验: toneId=91(多角色对话) 服务端返回 102040 TONE_NOT_AVALIABLE
+// -> 尝试 is_local_book=false, 服务端可能按数值 itemId 定位在线章节内容
+if (toneId == 91L && isLocal) {
+XposedHelpers.setBooleanField(req, "isLocalBook", false);
+log("[STREAM-REQ] 实验: toneId=91 -> isLocalBook=false");
+}
                                 } else if (param.getThrowable() != null) {
                                     log("[STREAM-REQ] 异常: " + param.getThrowable());
                                 }
