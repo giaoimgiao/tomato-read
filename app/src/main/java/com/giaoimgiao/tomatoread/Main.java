@@ -679,6 +679,7 @@ public class Main implements IXposedHookLoadPackage {
         }
     }
 
+    private void hookCronetTee(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
         // c$a 实现 TypedInput, in() 是 Cronet 响应真实字节出口; 字段 a 是 HttpURLConnection 可拿 URL/响应码
         XposedHelpers.findAndHookMethod(
                 "com.bytedance.frameworks.baselib.network.http.cronet.impl.c$a",
