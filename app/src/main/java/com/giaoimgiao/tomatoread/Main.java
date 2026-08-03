@@ -638,7 +638,8 @@ public class Main implements IXposedHookLoadPackage {
                                 }
                             }
                             if (!exists) {
-                                Object ne = XposedHelpers.newInstance(clsName, id, (String) t[1], (String) t[2]);
+                                Object ne = XposedHelpers.newInstance(clsName, lpparam.classLoader,
+                                        (Long) t[0], (String) t[1], (String) t[2]);
                                 list.add(ne);
                                 added++;
                             }
