@@ -1187,35 +1187,6 @@ public class Main implements IXposedHookLoadPackage {
     hookListInject(lpparam, cls, "O", "O", "LocalBookToneInfoConfig$ToneInfo", false);
     // w02/g.I(AudioPageInfo): 本地书 AI 音色列表 —— 真正播放校验数据源(s0 检查), 注入 ez1/e 列表
     hookW02GI(lpparam);
-    // v2.5.6: 诊断 —— w02/g.M/N(用户选择音色存储) + s(首次音色确认)
-    try {
-        XposedHelpers.findAndHookMethod("w02.g", lpparam.classLoader, "M", String.class, new XC_MethodHook() {
-            @Override
-            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                if (!cfgEnabled) return;
-                log("[DIAG-M] bookId=" + param.args[0] + " -> userSelectedTone=" + param.getResult());
-            }
-        });
-        XposedHelpers.findAndHookMethod("w02.g", lpparam.classLoader, "N", String.class, new XC_MethodHook() {
-            @Override
-            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                if (!cfgEnabled) return;
-                log("[DIAG-N] bookId=" + param.args[0] + " -> userSelectedToneOnline=" + param.getResult());
-            }
-        });
-        XposedHelpers.findAndHookMethod("w02.g", lpparam.classLoader, "s", String.class,
-                "com.dragon.read.rpc.model.BookToneInfo",
-                "com.dragon.read.component.audio.biz.protocol.core.data.RelativeToneModel", new XC_MethodHook() {
-            @Override
-            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                if (!cfgEnabled) return;
-                log("[DIAG-S] 首次音色确认 bookId=" + param.args[0]);
-            }
-        });
-        log("[DIAG] hook M/N/s 完成");
-    } catch (Throwable t) {
-        log("hook M/N/s 失败: " + t);
-    }
     // dialog/f.s0(AudioPageInfo): AI tab 播放前校验, 强制放行(双保险)
     hookS0(lpparam);
     // repo/d.a(StreamTtsItemRequest): 流式TTS请求数据有效性校验, 强制有效(本地书 bookId 转 long 无效)
@@ -1352,6 +1323,37 @@ public class Main implements IXposedHookLoadPackage {
             log("[W02GI] hook w02/g.I 完成(v2.5.5 TTS书注入)");
         } catch (Throwable t) {
             log("hook w02/g.I 失败: " + t);
+        }
+        // v2.5.7: hook w02/g.x(AudioCatalog) —— TTS书播放校验的speakerList转换点, 追加97多角色
+        // (播放引擎直接查 catalog/TtsInfo.speakerList 校验音色, 仅注入UI列表不够)
+        try {
+            XposedHelpers.findAndHookMethod("w02.g", lpparam.classLoader, "x",
+                    "com.dragon.read.component.download.model.AudioCatalog", new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                java.util.List<Object> list = (java.util.List<Object>) param.getResult();
+                                if (list == null) return;
+                                boolean has97 = false;
+                                for (Object e : list) {
+                                    try {
+                                        if (XposedHelpers.getLongField(e, "c") == 97L) { has97 = true; break; }
+                                    } catch (Throwable ignored) {
+                                    }
+                                }
+                                if (!has97) {
+                                    Class<?> ez1e = XposedHelpers.findClass("ez1.e", lpparam.classLoader);
+                                    list.add(XposedHelpers.newInstance(ez1e, "多角色对话升级版", 97L, ""));
+                                    log("[W02X] speakerList追加97, 列表=" + list.size());
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+            log("[W02X] hook w02/g.x 完成");
+        } catch (Throwable t) {
+            log("hook w02/g.x 失败: " + t);
         }
     }
 

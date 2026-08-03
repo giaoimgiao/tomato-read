@@ -37,7 +37,7 @@ public class MainActivity extends Activity {
     private static final String REPO = "giaoimgiao/tomato-read";
     private static final String GITHUB_API = "https://api.github.com/repos/" + REPO + "/releases/latest";
     private static final String QQ = "3519425997";
-    private static final String VERSION = "2.5.6"; // 与 build.gradle versionName 保持一致
+    private static final String VERSION = "2.5.7"; // 与 build.gradle versionName 保持一致
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
