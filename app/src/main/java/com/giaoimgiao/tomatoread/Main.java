@@ -72,6 +72,12 @@ public class Main implements IXposedHookLoadPackage {
             log("CronetTee hook 失败: " + t);
         }
         try {
+            hookToneInject(lpparam);
+            log("ToneInject hook 完成");
+        } catch (Throwable t) {
+            log("ToneInject hook 失败: " + t);
+        }
+        try {
             hookWebView(lpparam);
             log("WebView hook 完成");
         } catch (Throwable t) {
@@ -140,6 +146,164 @@ public class Main implements IXposedHookLoadPackage {
                         }
                     }
                 });
+    }
+
+    // ==================== 音色注入 (RelativeToneModel getter 补全) ====================
+
+    // 内置在线 AI 音色表 (来自抓包 BookToneInfoResponse.tts_tones)
+    private static final Object[][] AI_TONES = {
+            {91L, "多角色对话升级版", ""},
+            {74L, "成熟大叔音升级版", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_601_uncle_pro.png"},
+            {4L, "成熟大叔音", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E6%88%90%E7%86%9F%E5%A4%A7%E5%8F%94%E9%9F%B3.png"},
+            {1L, "甜美少女音", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E7%94%9C%E7%BE%8E%E5%B0%91%E5%A5%B3%E9%9F%B3.png"},
+            {5L, "开朗青年音", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E5%BC%80%E6%9C%97%E9%9D%92%E5%B9%B4%E9%9F%B3.png"},
+            {2L, "清亮青叔音", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E6%B8%85%E4%BA%AE%E9%9D%92%E5%8F%94%E9%9F%B3.png"},
+            {6L, "温柔淑女音", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E6%B8%A9%E6%9F%94%E6%B7%91%E5%A5%B3%E9%9F%B3.png"}
+    };
+    // 内置离线音色表 (来自抓包 offline_tts_tones)
+    private static final Object[][] OFFLINE_TONES = {
+            {118L, "成熟大叔离线版", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E6%88%90%E7%86%9F%E5%A4%A7%E5%8F%94%E9%9F%B3.png"},
+            {117L, "甜美少女离线版", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E7%94%9C%E7%BE%8E%E5%B0%91%E5%A5%B3%E9%9F%B3.png"},
+            {119L, "温柔淑女离线版", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E6%B8%A9%E6%9F%94%E6%B7%91%E5%A5%B3%E9%9F%B3.png"},
+            {120L, "开朗青年离线版", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E5%BC%80%E6%9C%97%E9%9D%92%E5%B9%B4%E9%9F%B3.png"}
+    };
+    // 内置真人音色表 (来自抓包 audio_tones)
+    private static final Object[][] AUDIO_TONES = {
+            {7660899274724576281L, "主播：禾熙", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E7%9C%9F%E4%BA%BA%E9%9F%B3.png"}
+    };
+
+    private static volatile boolean toneInjectedLogged = false;
+
+    private void hookToneInject(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
+        String cls = "com.dragon.read.component.audio.biz.protocol.core.data.RelativeToneModel";
+
+        // AI 在线音色补全
+        XposedHelpers.findAndHookMethod(cls, lpparam.classLoader, "getAiModelsForBook",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        if (!cfgEnabled) return;
+                        try {
+                            java.util.List<Object> list = (java.util.List<Object>) param.getResult();
+                            if (list == null) return;
+                            int added = 0;
+                            for (Object[] t : AI_TONES) {
+                                long id = (Long) t[0];
+                                if (!containsTone(list, id)) {
+                                    list.add(newToneItem(param, (String) t[1], id, (String) t[2]));
+                                    added++;
+                                }
+                            }
+                            if (added > 0) log("[INJECT-AI] 补全 " + added + " 个AI音色, 当前共 " + list.size() + " 个");
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                });
+
+        // 离线音色补全
+        XposedHelpers.findAndHookMethod(cls, lpparam.classLoader, "getOfflineModelsForBook",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        if (!cfgEnabled) return;
+                        try {
+                            java.util.List<Object> list = (java.util.List<Object>) param.getResult();
+                            if (list == null) return;
+                            int added = 0;
+                            for (Object[] t : OFFLINE_TONES) {
+                                long id = (Long) t[0];
+                                if (!containsTone(list, id)) {
+                                    list.add(newToneItem(param, (String) t[1], id, (String) t[2]));
+                                    added++;
+                                }
+                            }
+                            if (added > 0) log("[INJECT-OFF] 补全 " + added + " 个离线音色, 当前共 " + list.size() + " 个");
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                });
+
+        // 真人音色补全
+        XposedHelpers.findAndHookMethod(cls, lpparam.classLoader, "getVoiceModelsForBook",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        if (!cfgEnabled) return;
+                        try {
+                            java.util.List<Object> list = (java.util.List<Object>) param.getResult();
+                            if (list == null) return;
+                            int added = 0;
+                            for (Object[] t : AUDIO_TONES) {
+                                long id = (Long) t[0];
+                                if (!containsTone(list, id)) {
+                                    list.add(newToneItem(param, (String) t[1], id, (String) t[2]));
+                                    added++;
+                                }
+                            }
+                            if (added > 0) log("[INJECT-VOICE] 补全 " + added + " 个真人音色, 当前共 " + list.size() + " 个");
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                });
+
+        // 打印在线书解析链路 (验证用)
+        try {
+            XposedHelpers.findAndHookMethod(cls, lpparam.classLoader, "parse",
+                    "com.dragon.read.rpc.model.BookToneInfo", new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                Object model = param.getResult();
+                                if (model == null) return;
+                                String ai = summarizeTones(XposedHelpers.callMethod(model, "getAiModelsForBook"));
+                                String off = summarizeTones(XposedHelpers.callMethod(model, "getOfflineModelsForBook"));
+                                String voice = summarizeTones(XposedHelpers.callMethod(model, "getVoiceModelsForBook"));
+                                log("[PARSE] AI=" + ai + " | OFF=" + off + " | VOICE=" + voice);
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+        } catch (Throwable t) {
+            log("parse hook 失败: " + t);
+        }
+    }
+
+    private boolean containsTone(java.util.List<Object> list, long id) {
+        for (Object o : list) {
+            try {
+                if (XposedHelpers.getLongField(o, "c") == id) return true;
+            } catch (Throwable ignored) {
+            }
+        }
+        return false;
+    }
+
+    private Object newToneItem(XC_MethodHook.MethodHookParam param, String title, long id, String icon) {
+        try {
+            Class<?> cls = param.thisObject.getClass().getClassLoader()
+                    .loadClass("ez1.e");
+            return XposedHelpers.newInstance(cls, title, id, icon);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private String summarizeTones(Object listObj) {
+        try {
+            java.util.List<?> list = (java.util.List<?>) listObj;
+            if (list == null || list.isEmpty()) return "[]";
+            StringBuilder sb = new StringBuilder("[");
+            for (Object o : list) {
+                if (sb.length() > 120) { sb.append("..."); break; }
+                String title = XposedHelpers.getStringField(o, "a");
+                long id = XposedHelpers.getLongField(o, "c");
+                sb.append(id).append(":").append(title).append(", ");
+            }
+            return sb.append("]").toString();
+        } catch (Throwable t) {
+            return "<err>";
+        }
     }
 
     // ==================== Cronet 响应字节抓取 (c$a.in 代理流) ====================
