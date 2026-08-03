@@ -587,6 +587,10 @@ public class Main implements IXposedHookLoadPackage {
     hookW02GI(lpparam);
     // dialog/f.s0(AudioPageInfo): AI tab 播放前校验, 强制放行(双保险)
     hookS0(lpparam);
+    // repo/d.a(StreamTtsItemRequest): 流式TTS请求数据有效性校验, 强制有效(本地书 bookId 转 long 无效)
+    hookDValidity(lpparam);
+    // InnerSegmentRepo$requestStreamTTS$2.invoke(J): 记录流式请求参数 + 确保不抛异常
+    hookStreamInvoke(lpparam);
         // r(bookId): 每本书的 AudioConfig(含音色列表)
         try {
             XposedHelpers.findAndHookMethod(cls, lpparam.classLoader, "r", String.class, new XC_MethodHook() {
@@ -712,6 +716,69 @@ public class Main implements IXposedHookLoadPackage {
             log("[S0] hook dialog/f.s0 完成");
         } catch (Throwable t) {
             log("hook dialog/f.s0 失败: " + t);
+        }
+    }
+
+        /** hook repo/d.a(StreamTtsItemRequest): 流式TTS数据有效性校验, 强制返回 false(有效) */
+    private void hookDValidity(final XC_LoadPackage.LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookMethod("com.dragon.read.component.audio.impl.ui.audio.core.repo.d",
+                    lpparam.classLoader, "a",
+                    "com.dragon.read.rpc.model.StreamTtsItemRequest",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            if (Boolean.TRUE.equals(param.getResult())) {
+                                param.setResult(false);
+                                log("[DA] 强制流式TTS数据有效");
+                            }
+                        }
+                    });
+            log("[DA] hook repo/d.a 完成");
+        } catch (Throwable t) {
+            log("hook repo/d.a 失败: " + t);
+        }
+    }
+
+    /** hook requestStreamTTS$2.invoke(J): 记录流式请求参数 */
+    private void hookStreamInvoke(final XC_LoadPackage.LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "com.dragon.read.component.audio.impl.ui.audio.core.repo.InnerSegmentRepo$requestStreamTTS$2",
+                    lpparam.classLoader, "invoke", long.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                log("[STREAM-REQ] itemId=" + param.args[0]);
+                            } catch (Throwable ignored) {
+                            }
+                        }
+
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                Object req = param.getResult();
+                                if (req != null) {
+                                    long bookId = XposedHelpers.getLongField(req, "bookId");
+                                    long itemId = XposedHelpers.getLongField(req, "itemId");
+                                    long toneId = XposedHelpers.getLongField(req, "toneId");
+                                    boolean isLocal = XposedHelpers.getBooleanField(req, "isLocalBook");
+                                    log("[STREAM-REQ] bookId=" + bookId + " itemId=" + itemId +
+                                            " toneId=" + toneId + " isLocalBook=" + isLocal);
+                                } else if (param.getThrowable() != null) {
+                                    log("[STREAM-REQ] 异常: " + param.getThrowable());
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+            log("[STREAM-REQ] hook invoke 完成");
+        } catch (Throwable t) {
+            log("hook requestStreamTTS invoke 失败: " + t);
         }
     }
 
