@@ -37,6 +37,7 @@ public class Main implements IXposedHookLoadPackage {
     private static volatile boolean cfgEnabled = true;
     private static final Object LOG_LOCK = new Object();
     private static final int MAX_BODY = 80000; // 单响应体记录上限
+    private static volatile int reqCount = 0;   // 请求计数(限制单次会话记录量)
 
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
@@ -74,17 +75,20 @@ public class Main implements IXposedHookLoadPackage {
                             if (resp == null) return;
                             Object req = XposedHelpers.callMethod(resp, "request");
                             String url = String.valueOf(XposedHelpers.callMethod(req, "url"));
-                            if (!isInteresting(url)) return;
-
                             String method = String.valueOf(XposedHelpers.callMethod(req, "method"));
                             int code = (Integer) XposedHelpers.callMethod(resp, "code");
-                            log("REQ: [" + method + " " + code + "] " + url);
+                            String ct = String.valueOf(XposedHelpers.callMethod(resp, "header", "Content-Type"));
 
-                            // 记录响应体(peekBody 不消费原流)
-                            Object peek = XposedHelpers.callMethod(resp, "peekBody", 1024L * 1024L);
-                            byte[] body = (byte[]) XposedHelpers.callMethod(
-                                    XposedHelpers.callMethod(peek, "source"), "readByteArray");
-                            logResponse("BODY", url, body);
+                            // 记录所有请求(排除纯静态资源), 每条 URL 只记一次 BODY
+                            if (!shouldSkip(url, ct)) {
+                                log("REQ: [" + method + " " + code + "] " + url + " CT=" + ct);
+                            }
+                            if (!shouldSkip(url, ct) && shouldLogBody(url)) {
+                                Object peek = XposedHelpers.callMethod(resp, "peekBody", 1024L * 1024L);
+                                byte[] body = (byte[]) XposedHelpers.callMethod(
+                                        XposedHelpers.callMethod(peek, "source"), "readByteArray");
+                                logResponse("BODY", url, body);
+                            }
                         } catch (Throwable ignored) {
                         }
                     }
@@ -103,7 +107,7 @@ public class Main implements IXposedHookLoadPackage {
                         protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                             if (!cfgEnabled) return;
                             String url = String.valueOf(param.args[1]);
-                            if (isInteresting(url)) log("WEB-REQ: " + url);
+                            if (!shouldSkip(url, null)) log("WEB-REQ: " + url);
                         }
                     });
         } catch (Throwable ignored) {
@@ -117,7 +121,7 @@ public class Main implements IXposedHookLoadPackage {
                         protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                             if (!cfgEnabled) return;
                             String url = String.valueOf(XposedHelpers.callMethod(param.args[1], "getUrl"));
-                            if (isInteresting(url)) log("WEB-REQ: " + url);
+                            if (!shouldSkip(url, null)) log("WEB-REQ: " + url);
                         }
                     });
         } catch (Throwable ignored) {
@@ -133,7 +137,7 @@ public class Main implements IXposedHookLoadPackage {
                         protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                             if (!cfgEnabled) return;
                             String url = String.valueOf(XposedHelpers.callMethod(param.args[1], "getUrl"));
-                            if (isInteresting(url)) log("X5-REQ: " + url);
+                            if (!shouldSkip(url, null)) log("X5-REQ: " + url);
                         }
                     });
         } catch (Throwable ignored) {
@@ -141,25 +145,41 @@ public class Main implements IXposedHookLoadPackage {
     }
 
     /**
-     * 音色/朗读相关接口过滤
+     * 排除: 纯静态资源/媒体流/埋点统计
      */
-    private boolean isInteresting(String url) {
-        if (url == null) return false;
+    private boolean shouldSkip(String url, String ct) {
+        if (url == null) return true;
         String u = url.toLowerCase(Locale.US);
-        // 静态资源排除
         if (u.contains(".js") || u.contains(".css") || u.contains(".png")
                 || u.contains(".jpg") || u.contains(".jpeg") || u.contains(".gif")
                 || u.contains(".webp") || u.contains(".ico") || u.contains(".woff")
-                || u.contains(".ttf") || u.contains(".svg") || u.contains(".mp3")
-                || u.contains(".mp4") || u.contains(".m4a")) return false;
-        // 音色/朗读/语音相关
-        if (u.contains("tone") || u.contains("tts") || u.contains("speaker")
-                || u.contains("voice") || u.contains("audio") || u.contains("read")
-                || u.contains("listen") || u.contains("sound")) return true;
-        // 目录/书籍信息(可能携带 tts_tones)
-        if (u.contains("directory") || u.contains("bookinfo") || u.contains("book_info")
-                || u.contains("reader")) return true;
+                || u.contains(".ttf") || u.contains(".svg")) return true;
+        // 媒体流(音频/视频文件本体)
+        if (u.contains(".mp3") || u.contains(".mp4") || u.contains(".m4a")
+                || u.contains(".aac") || u.contains(".wav") || u.contains(".flac")
+                || u.contains(".ts") || u.contains(".m3u8") || u.contains(".opus")) return true;
+        // 埋点/统计/日志上报
+        if (u.contains("/log/") || u.contains("logupload") || u.contains("monitor")
+                || u.contains("metrics") || u.contains("pgc/monitor") || u.contains("_staging_")) return false;
+        // Content-Type 二进制
+        if (ct != null && (ct.contains("image") || ct.contains("audio") || ct.contains("video")
+                || ct.contains("octet-stream") || ct.contains("protobuf"))) return true;
         return false;
+    }
+
+    /**
+     * 是否需要记录 BODY(控制日志量): 只记录 JSON 类接口
+     */
+    private boolean shouldLogBody(String url) {
+        if (url == null) return false;
+        String u = url.toLowerCase(Locale.US);
+        // 音色/朗读/书籍目录 优先
+        if (u.contains("tone") || u.contains("tts") || u.contains("speaker")
+                || u.contains("voice") || u.contains("audio") || u.contains("listen")
+                || u.contains("sound") || u.contains("directory") || u.contains("bookinfo")
+                || u.contains("book_info") || u.contains("reader") || u.contains("read")) return true;
+        // 其余接口也记录 body, 但限流: 每 URL 只记一次
+        return true;
     }
 
     // ==================== 日志/配置 ====================
@@ -190,9 +210,15 @@ public class Main implements IXposedHookLoadPackage {
         if (body == null || body.length == 0) return;
         String bodyStr;
         try {
-            bodyStr = new String(body, "UTF-8");
+            // gzip 解压(番茄手动设置 Accept-Encoding: gzip, OkHttp 不解压)
+            byte[] data = body;
+            if (body.length > 2 && (body[0] & 0xFF) == 0x1f && (body[1] & 0xFF) == 0x8b) {
+                java.util.zip.GZIPInputStream gis = new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(body));
+                data = readAll(gis, MAX_BODY * 4);
+            }
+            bodyStr = new String(data, "UTF-8");
         } catch (Throwable t) {
-            bodyStr = "<binary>";
+            bodyStr = "<binary:" + body.length + ">";
         }
         if (bodyStr.length() > MAX_BODY) bodyStr = bodyStr.substring(0, MAX_BODY) + "...(截断)";
         log("[" + tag + "] " + url + " BODY(" + body.length + "): " + bodyStr);
