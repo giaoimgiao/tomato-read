@@ -66,6 +66,12 @@ public class Main implements IXposedHookLoadPackage {
             log("RPC hook 失败: " + t);
         }
         try {
+            hookCronetTee(lpparam);
+            log("CronetTee hook 完成");
+        } catch (Throwable t) {
+            log("CronetTee hook 失败: " + t);
+        }
+        try {
             hookWebView(lpparam);
             log("WebView hook 完成");
         } catch (Throwable t) {
@@ -120,19 +126,108 @@ public class Main implements IXposedHookLoadPackage {
                             Object body = param.getResult();
                             if (body == null) return;
                             String cn = body.getClass().getName();
-                            String dump = dumpObject(body, 0);
-                            // 音色相关模型完整打印, 其他只打印类名+大小
-                            if (cn.toLowerCase().contains("tone") || cn.toLowerCase().contains("tts")
-                                    || cn.toLowerCase().contains("speaker") || cn.toLowerCase().contains("audio")
-                                    || dump.contains("ttsTones") || dump.contains("ToneInfo")) {
+                            String low = cn.toLowerCase(Locale.US);
+                            // 只按类名判断(避免大对象全文 dump 塞爆日志)
+                            if (low.contains("tone") || low.contains("tts") || low.contains("speaker")
+                                    || low.contains("audio") || low.contains("voice")) {
+                                String dump = dumpObject(body, 0);
+                                if (dump.length() > 8000) dump = dump.substring(0, 8000) + "...(截断)";
                                 log("[RPC-TONE] " + cn + " -> " + dump);
                             } else {
-                                log("[RPC] " + cn + " (" + dump.length() + "字)");
+                                log("[RPC] " + cn);
                             }
                         } catch (Throwable ignored) {
                         }
                     }
                 });
+    }
+
+    // ==================== Cronet 响应字节抓取 (c$a.in 代理流) ====================
+
+    /** 命中打印上限(每会话), 防止刷屏 */
+    private static volatile int cronetHitCount = 0;
+
+    private void hookCronetTee(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
+        // c$a 实现 TypedInput, in() 是 Cronet 响应真实字节出口
+        XposedHelpers.findAndHookMethod(
+                "com.bytedance.frameworks.baselib.network.http.cronet.impl.c$a",
+                lpparam.classLoader, "in", new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        if (!cfgEnabled) return;
+                        try {
+                            Object orig = param.getResult();
+                            if (orig instanceof InputStream) {
+                                param.setResult(new TeeInputStream((InputStream) orig));
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                });
+    }
+
+    /** 代理输入流: 读取时静默累积字节, 流结束/关闭时检测音色关键字, 命中才打日志 */
+    private static class TeeInputStream extends InputStream {
+        private static final String[] KEYS = {"ttsTones", "offlineTtsTones", "audioTones",
+                "toneDecisionInfo", "recommendTone", "ToneInfo", "tts_tones", "offline_tts_tones",
+                "speakerList", "voiceList", "toneList", "multiRole", "mature", "novel_tts"};
+        private static final int MAX_CAP = 512 * 1024;   // 单条累积上限 512KB
+        private static final int MAX_PRINT = 4000;       // 命中后打印上限
+        private static final int MAX_HITS = 30;          // 每会话命中打印上限
+
+        private final InputStream in;
+        private final ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        private boolean closed = false;
+
+        TeeInputStream(InputStream in) { this.in = in; }
+
+        @Override
+        public int read() throws java.io.IOException {
+            int b = in.read();
+            if (b >= 0 && buf.size() < MAX_CAP) buf.write(b);
+            if (b < 0) finish();
+            return b;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws java.io.IOException {
+            int n = in.read(b, off, len);
+            if (n > 0 && buf.size() < MAX_CAP) {
+                int room = MAX_CAP - buf.size();
+                buf.write(b, off, Math.min(n, room));
+            }
+            if (n < 0) finish();
+            return n;
+        }
+
+        @Override
+        public void close() throws java.io.IOException {
+            try { finish(); } finally { in.close(); }
+        }
+
+        @Override
+        public int available() throws java.io.IOException { return in.available(); }
+
+        private synchronized void finish() {
+            if (closed) return;
+            closed = true;
+            try {
+                byte[] data = buf.toByteArray();
+                if (data.length == 0) return;
+                String s = new String(data, "UTF-8");
+                boolean hit = false;
+                for (String k : KEYS) {
+                    if (s.contains(k)) { hit = true; break; }
+                }
+                if (hit && cronetHitCount < MAX_HITS) {
+                    cronetHitCount++;
+                    String print = s.length() > MAX_PRINT
+                            ? s.substring(0, MAX_PRINT) + "...(截断 " + s.length() + "字)" : s;
+                    log("[CRONET-TONE] len=" + data.length + " -> " + print);
+                }
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     // ==================== AudioConfig 音色数据 hook ====================
