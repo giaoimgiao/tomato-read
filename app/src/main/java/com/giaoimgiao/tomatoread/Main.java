@@ -95,6 +95,11 @@ public class Main implements IXposedHookLoadPackage {
             log("SUB-ENTRY hook 失败: " + t);
         }
         try {
+            hookSubtitleProvider(lpparam);
+        } catch (Throwable t) {
+            log("SUB-PROV hook 失败: " + t);
+        }
+        try {
             hookCronetResp(lpparam);
             log("CronetResp hook 完成");
         } catch (Throwable t) {
@@ -420,6 +425,8 @@ public class Main implements IXposedHookLoadPackage {
     /** 关键接口(playinfo/toneinfo/timepoint)独立命中计数 */
     private static volatile int cronetKeyHitCount = 0;
     private static final int MAX_KEY_HITS = 200;
+    /** v2.4: execute() 最近一次请求 URL 缓存(供 after 用, 因为执行后 thisObject.e 可能被清空) */
+    private static volatile String lastCronetUrl = "";
 
     /** 请求侧抓包: execute() 是所有 Cronet 请求最终入口, 按 URL 特征记录 TTS/播放请求 */
     private void hookCronetReq(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
@@ -444,6 +451,7 @@ public class Main implements IXposedHookLoadPackage {
                                     || lower.contains("tts") || lower.contains("speech")
                                     || lower.contains("synthes") || lower.contains("fq-tts")
                                     || lower.contains("tone")) {
+                                lastCronetUrl = url;
                                 String body = "";
                                 try {
                                     Object req = XposedHelpers.getObjectField(param.thisObject, "e");
@@ -451,6 +459,24 @@ public class Main implements IXposedHookLoadPackage {
                                         try { body = String.valueOf(XposedHelpers.callMethod(req, "body")); } catch (Throwable ignored) {}
                                         if (body == null || body.isEmpty()) {
                                             try { body = String.valueOf(XposedHelpers.callMethod(req, "getBody")); } catch (Throwable ignored) {}
+                                        }
+                                        // v2.4: dump TypedByteArray 实际内容(请求体 JSON, 确认 book_id 字段)
+                                        if (body != null && body.startsWith("TypedByteArray")) {
+                                            try {
+                                                Object b = XposedHelpers.callMethod(req, "body");
+                                                if (b == null) b = XposedHelpers.callMethod(req, "getBody");
+                                                if (b != null) {
+                                                    java.io.InputStream is = (java.io.InputStream) XposedHelpers.callMethod(b, "in");
+                                                    java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                                                    byte[] tmp = new byte[512];
+                                                    int n;
+                                                    while ((n = is.read(tmp)) > 0 && bos.size() < 4096) bos.write(tmp, 0, n);
+                                                    String content = new String(bos.toByteArray(), "UTF-8");
+                                                    if (content.length() > 1500) content = content.substring(0, 1500) + "...";
+                                                    log("[CRONET-REQ-BODY] " + url.substring(0, Math.min(url.length(), 120)) + " -> " + content);
+                                                }
+                                            } catch (Throwable ignored) {
+                                            }
                                         }
                                     }
                                 } catch (Throwable ignored) {
@@ -474,7 +500,8 @@ public class Main implements IXposedHookLoadPackage {
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                         if (!cfgEnabled) return;
                         try {
-                            String url = "";
+                            // v2.4: 优先用 before 缓存的 URL(执行后 thisObject.e 可能被清空导致 URL 丢失)
+                            String url = lastCronetUrl;
                             try {
                                 Object req = XposedHelpers.getObjectField(param.thisObject, "e");
                                 if (req != null) url = String.valueOf(XposedHelpers.callMethod(req, "getUrl"));
@@ -483,10 +510,16 @@ public class Main implements IXposedHookLoadPackage {
                             String lower = url.toLowerCase(Locale.US);
                             if (lower.contains("tts") || lower.contains("playinfo")
                                     || lower.contains("full") || lower.contains("toneinfo")) {
+                                // v2.4: execute() 抛异常时记录(streamtts 无 [CRONET-RESP] 记录 => 疑似异常)
+                                Throwable ex = param.getThrowable();
+                                if (ex != null) {
+                                    log("[CRONET-RESP-EX] url=" + url + " 异常: " + ex);
+                                    return;
+                                }
                                 Object r = param.getResult();
                                 String info = r == null ? "null" : r.getClass().getSimpleName();
                                 int code = -1;
-                                // v2.3: 优先从 Cronet HttpURLConnection 拿真实 HTTP 响应码
+                                // 优先从 Cronet HttpURLConnection 拿真实 HTTP 响应码
                                 try {
                                     Object conn = XposedHelpers.getObjectField(param.thisObject, "a");
                                     if (conn instanceof java.net.HttpURLConnection) {
@@ -499,7 +532,7 @@ public class Main implements IXposedHookLoadPackage {
                                     if (code < 0) { try { code = (Integer) XposedHelpers.callMethod(r, "getCode"); } catch (Throwable ignored) {} }
                                     if (code < 0) { try { code = (Integer) XposedHelpers.callMethod(r, "getResponseCode"); } catch (Throwable ignored) {} }
                                 }
-                                // v2.3: 探测 SsResponse 可读方法, 尝试拿响应体(streamtts 响应未走 c$a.in(), 在此兜底)
+                                // 探测 SsResponse 可读方法, 尝试拿响应体(streamtts 响应未走 c$a.in(), 在此兜底)
                                 String body = "";
                                 if (r != null) {
                                     try { body = String.valueOf(XposedHelpers.callMethod(r, "body")); } catch (Throwable ignored) {}
@@ -715,6 +748,63 @@ public class Main implements IXposedHookLoadPackage {
             log("SUB-ENTRY hook 完成");
         } catch (Throwable t) {
             log("SUB-ENTRY hook 失败: " + t);
+        }
+    }
+
+    /**
+     * v2.4: hook 真实字幕链路入口(运行时实际走这两个, AiTtsSubtitleDataCacher 是死代码):
+     *   SubtitleListProvider.c(String bookId, String chapterId, long toneId, boolean isAudio)V
+     *   TTSSubtitleProvider.g(String bookId, String chapterId, long toneId)V
+     * 两者内部 h() -> Observable.zip(ASR, TTS同步) -> 本地书 ASR bookId=hex 转 long=0 被拒 -> 字幕加载失败。
+     * 短路: 记录参数 + setResult(null) 跳过, 避免干扰播放主链路。
+     */
+    private void hookSubtitleProvider(final XC_LoadPackage.LoadPackageParam lpparam) {
+        // 1. SubtitleListProvider.c
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "com.dragon.read.component.audio.impl.ui.page.subtitle.SubtitleListProvider",
+                    lpparam.classLoader, "c",
+                    String.class, String.class, long.class, boolean.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                log("[SUB-PROV] SubtitleListProvider.c bookId=" + param.args[0]
+                                        + " chapterId=" + param.args[1] + " toneId=" + param.args[2]
+                                        + " isAudio=" + param.args[3]);
+                                param.setResult(null);
+                                log("[SUB-PROV] 已短路 SubtitleListProvider.c");
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+            log("SubtitleListProvider.c hook 完成");
+        } catch (Throwable t) {
+            log("SubtitleListProvider.c hook 失败: " + t);
+        }
+        // 2. TTSSubtitleProvider.g
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "com.dragon.read.component.audio.impl.ui.page.subtitle.TTSSubtitleProvider",
+                    lpparam.classLoader, "g",
+                    String.class, String.class, long.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                log("[SUB-PROV] TTSSubtitleProvider.g bookId=" + param.args[0]
+                                        + " chapterId=" + param.args[1] + " toneId=" + param.args[2]);
+                                param.setResult(null);
+                                log("[SUB-PROV] 已短路 TTSSubtitleProvider.g");
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+            log("TTSSubtitleProvider.g hook 完成");
+        } catch (Throwable t) {
+            log("TTSSubtitleProvider.g hook 失败: " + t);
         }
     }
 
@@ -1050,7 +1140,7 @@ public class Main implements IXposedHookLoadPackage {
         }
     }
 
-    /** hook requestStreamTTS$2.invoke(J): 记录流式请求参数 */
+    /** hook requestStreamTTS$2.invoke(J): 记录流式请求参数 + v2.4: dump全部字段 + 实验改bookId(0->itemId) */
     private void hookStreamInvoke(final XC_LoadPackage.LoadPackageParam lpparam) {
         try {
             XposedHelpers.findAndHookMethod(
@@ -1076,8 +1166,16 @@ public class Main implements IXposedHookLoadPackage {
                                     long itemId = XposedHelpers.getLongField(req, "itemId");
                                     long toneId = XposedHelpers.getLongField(req, "toneId");
                                     boolean isLocal = XposedHelpers.getBooleanField(req, "isLocalBook");
+                                    String taskId = getFieldStr(req, "taskId");
+                                    boolean block = getFieldBool(req, "blockReaderSentencePart");
                                     log("[STREAM-REQ] bookId=" + bookId + " itemId=" + itemId +
-                                            " toneId=" + toneId + " isLocalBook=" + isLocal);
+                                            " toneId=" + toneId + " isLocalBook=" + isLocal +
+                                            " taskId=" + taskId + " blockReaderSentencePart=" + block);
+                                    // v2.4 实验: bookId=0(本地书hex溢出) 服务端拒绝 -> 改成 itemId 试试服务端是否接受
+                                    if (bookId == 0L && itemId != 0L) {
+                                        XposedHelpers.setLongField(req, "bookId", itemId);
+                                        log("[STREAM-REQ] 实验: bookId=0 -> 改为 itemId=" + itemId);
+                                    }
                                 } else if (param.getThrowable() != null) {
                                     log("[STREAM-REQ] 异常: " + param.getThrowable());
                                 }
