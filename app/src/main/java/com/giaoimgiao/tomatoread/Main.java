@@ -1254,7 +1254,7 @@ public class Main implements IXposedHookLoadPackage {
         }
     }
 
-    /** hook w02/g.I(AudioPageInfo): 本地书返回注入的 AI 音色列表(ez1/e), 打通 s0 播放校验 */
+    /** hook w02/g.I(AudioPageInfo): AI音色列表(ez1/e) —— 本地书注入全量AI_TONES, TTS书(在线/成绩不达标)追加97多角色 */
     private void hookW02GI(final XC_LoadPackage.LoadPackageParam lpparam) {
         try {
             XposedHelpers.findAndHookMethod("w02.g", lpparam.classLoader, "I",
@@ -1267,22 +1267,49 @@ public class Main implements IXposedHookLoadPackage {
                                 Object pageInfo = param.args[0];
                                 if (pageInfo == null) return;
                                 boolean isLocal = XposedHelpers.getBooleanField(pageInfo, "isLocalBook");
-                                if (!isLocal) return;
-                                // 本地书: 注入完整 AI 音色列表
-                                Class<?> ez1e = XposedHelpers.findClass("ez1.e", lpparam.classLoader);
-                                java.util.List<Object> list = new java.util.ArrayList<Object>();
-                                for (Object[] t : AI_TONES) {
-                                    Object item = XposedHelpers.newInstance(ez1e,
-                                            (String) t[1], (Long) t[0], (String) t[2]);
-                                    list.add(item);
+                                boolean isTts = false;
+                                try {
+                                    Object bookInfo = XposedHelpers.getObjectField(pageInfo, "bookInfo");
+                                    if (bookInfo != null) isTts = XposedHelpers.getBooleanField(bookInfo, "isTtsBook");
+                                } catch (Throwable ignored) {
                                 }
-                                param.setResult(list);
-                                log("[W02GI] 本地书注入 AI 音色 " + list.size() + " 个");
+                                Class<?> ez1e = XposedHelpers.findClass("ez1.e", lpparam.classLoader);
+                                if (isLocal) {
+                                    // 本地书: 注入完整 AI 音色列表
+                                    java.util.List<Object> list = new java.util.ArrayList<Object>();
+                                    for (Object[] t : AI_TONES) {
+                                        Object item = XposedHelpers.newInstance(ez1e,
+                                                (String) t[1], (Long) t[0], (String) t[2]);
+                                        list.add(item);
+                                    }
+                                    param.setResult(list);
+                                    log("[W02GI] 本地书注入 AI 音色 " + list.size() + " 个");
+                                } else if (isTts) {
+                                    // TTS书(在线/成绩不达标): 在原始列表上追加97多角色对话升级版
+                                    java.util.List<Object> list = (java.util.List<Object>) param.getResult();
+                                    if (list == null) {
+                                        list = new java.util.ArrayList<Object>();
+                                        param.setResult(list);
+                                    }
+                                    boolean has97 = false;
+                                    for (Object e : list) {
+                                        try {
+                                            if (XposedHelpers.getLongField(e, "c") == 97L) { has97 = true; break; }
+                                        } catch (Throwable ignored) {
+                                        }
+                                    }
+                                    if (!has97) {
+                                        list.add(XposedHelpers.newInstance(ez1e, "多角色对话升级版", 97L, ""));
+                                        log("[W02GI] TTS书追加97多角色, 列表=" + list.size());
+                                    } else {
+                                        log("[W02GI] TTS书列表已含97, 列表=" + list.size());
+                                    }
+                                }
                             } catch (Throwable ignored) {
                             }
                         }
                     });
-            log("[W02GI] hook w02/g.I 完成");
+            log("[W02GI] hook w02/g.I 完成(v2.5.5 TTS书注入)");
         } catch (Throwable t) {
             log("hook w02/g.I 失败: " + t);
         }
