@@ -15,7 +15,7 @@ import java.util.Date;
 import java.util.Locale;
 
 /**
- * TomatoRead v1.0 —— 抓包版
+ * TomatoRead v1.7 —— 抓包版+注入版
  * 目标: 番茄小说 com.dragon.read 6.7.3.32
  *
  * 目的: 抓取「智能朗读」音色列表接口(tts_tones/offline_tts_tones/BookToneInfo),
@@ -43,7 +43,7 @@ public class Main implements IXposedHookLoadPackage {
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
         if (!lpparam.packageName.equals(TARGET)) return;
 
-        log("========== TomatoRead v1.0 注入成功 ==========");
+        log("========== TomatoRead v1.7 注入成功 ==========");
         log("target=" + lpparam.packageName + " ver=" + lpparam.processName);
         loadConfig();
 
@@ -70,6 +70,12 @@ public class Main implements IXposedHookLoadPackage {
             log("CronetTee hook 完成");
         } catch (Throwable t) {
             log("CronetTee hook 失败: " + t);
+        }
+        try {
+            hookCronetReq(lpparam);
+            log("CronetReq hook 完成");
+        } catch (Throwable t) {
+            log("CronetReq hook 失败: " + t);
         }
         try {
             hookToneInject(lpparam);
@@ -390,14 +396,55 @@ public class Main implements IXposedHookLoadPackage {
             return "<err>";
         }
     }
-
     // ==================== Cronet 响应字节抓取 (c$a.in 代理流) ====================
 
     /** 命中打印上限(每会话), 防止刷屏 */
     private static volatile int cronetHitCount = 0;
 
+    /** 请求侧抓包: execute() 是所有 Cronet 请求最终入口, 按 URL 特征记录 TTS/播放请求 */
+    private void hookCronetReq(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
+        XposedHelpers.findAndHookMethod(
+                "com.bytedance.frameworks.baselib.network.http.cronet.impl.c",
+                lpparam.classLoader, "execute", new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        if (!cfgEnabled) return;
+                        try {
+                            String url = "";
+                            try {
+                                Object req = XposedHelpers.getObjectField(param.thisObject, "e");
+                                if (req != null) {
+                                    try { url = String.valueOf(XposedHelpers.callMethod(req, "getUrl")); } catch (Throwable ignored) {}
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                            String low = url.toLowerCase(Locale.US);
+                            if (low.contains("tts") || low.contains("audio") || low.contains("speech")
+                                    || low.contains("synthes") || low.contains("novel") || low.contains("tone")
+                                    || low.contains("fq-tts")) {
+                                String body = "";
+                                try {
+                                    Object req = XposedHelpers.getObjectField(param.thisObject, "e");
+                                    if (req != null) {
+                                        try { body = String.valueOf(XposedHelpers.callMethod(req, "body")); } catch (Throwable ignored) {}
+                                        if (body == null || body.isEmpty()) {
+                                            try { body = String.valueOf(XposedHelpers.callMethod(req, "getBody")); } catch (Throwable ignored) {}
+                                        }
+                                    }
+                                } catch (Throwable ignored) {
+                                }
+                                if (body != null && body.length() > 2000) body = body.substring(0, 2000) + "...";
+                                log("[CRONET-REQ] " + url + " body=" + body);
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                });
+    }
+
+
     private void hookCronetTee(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
-        // c$a 实现 TypedInput, in() 是 Cronet 响应真实字节出口
+        // c$a 实现 TypedInput, in() 是 Cronet 响应真实字节出口; 字段 a 是 HttpURLConnection 可拿 URL/响应码
         XposedHelpers.findAndHookMethod(
                 "com.bytedance.frameworks.baselib.network.http.cronet.impl.c$a",
                 lpparam.classLoader, "in", new XC_MethodHook() {
@@ -407,7 +454,18 @@ public class Main implements IXposedHookLoadPackage {
                         try {
                             Object orig = param.getResult();
                             if (orig instanceof InputStream) {
-                                param.setResult(new TeeInputStream((InputStream) orig));
+                                String url = "";
+                                int code = 0;
+                                try {
+                                    Object conn = XposedHelpers.getObjectField(param.thisObject, "a");
+                                    if (conn instanceof java.net.HttpURLConnection) {
+                                        java.net.HttpURLConnection hc = (java.net.HttpURLConnection) conn;
+                                        try { url = String.valueOf(hc.getURL()); } catch (Throwable ignored) {}
+                                        try { code = hc.getResponseCode(); } catch (Throwable ignored) {}
+                                    }
+                                } catch (Throwable ignored) {
+                                }
+                                param.setResult(new TeeInputStream((InputStream) orig, url, code));
                             }
                         } catch (Throwable ignored) {
                         }
@@ -415,20 +473,28 @@ public class Main implements IXposedHookLoadPackage {
                 });
     }
 
-    /** 代理输入流: 读取时静默累积字节, 流结束/关闭时检测音色关键字, 命中才打日志 */
+    /** 代理输入流: 读取时静默累积字节, 流结束/关闭时检测音色关键字或播放特征, 命中才打日志 */
     private static class TeeInputStream extends InputStream {
         private static final String[] KEYS = {"ttsTones", "offlineTtsTones", "audioTones",
                 "toneDecisionInfo", "recommendTone", "ToneInfo", "tts_tones", "offline_tts_tones",
-                "speakerList", "voiceList", "toneList", "multiRole", "mature", "novel_tts"};
+                "speakerList", "voiceList", "toneList", "multiRole", "mature", "novel_tts",
+                "err_msg", "error_code", "errorCode", "errorMsg", "\"message\"", "请稍候",
+                "speech", "synthes", "synthesis"};
         private static final int MAX_CAP = 512 * 1024;   // 单条累积上限 512KB
         private static final int MAX_PRINT = 4000;       // 命中后打印上限
-        private static final int MAX_HITS = 30;          // 每会话命中打印上限
+        private static final int MAX_HITS = 60;          // 每会话命中打印上限
 
         private final InputStream in;
+        private final String url;
+        private final int code;
         private final ByteArrayOutputStream buf = new ByteArrayOutputStream();
         private boolean closed = false;
 
-        TeeInputStream(InputStream in) { this.in = in; }
+        TeeInputStream(InputStream in, String url, int code) {
+            this.in = in;
+            this.url = url == null ? "" : url;
+            this.code = code;
+        }
 
         @Override
         public int read() throws java.io.IOException {
@@ -464,18 +530,39 @@ public class Main implements IXposedHookLoadPackage {
                 byte[] data = buf.toByteArray();
                 if (data.length == 0) return;
                 String s = new String(data, "UTF-8");
-                boolean hit = false;
-                for (String k : KEYS) {
-                    if (s.contains(k)) { hit = true; break; }
+                String lower = url.toLowerCase(Locale.US);
+                boolean hit = lower.contains("tts") || lower.contains("audio")
+                        || lower.contains("speech") || lower.contains("synthes")
+                        || lower.contains("novel") || lower.contains("tone")
+                        || lower.contains("fq-tts");
+                if (!hit) {
+                    for (String k : KEYS) {
+                        if (s.contains(k)) { hit = true; break; }
+                    }
                 }
                 if (hit && cronetHitCount < MAX_HITS) {
                     cronetHitCount++;
-                    String print = s.length() > MAX_PRINT
-                            ? s.substring(0, MAX_PRINT) + "...(截断 " + s.length() + "字)" : s;
-                    log("[CRONET-TONE] len=" + data.length + " -> " + print);
+                    boolean textLike = s.indexOf(0) < 0 && (s.startsWith("{") || s.startsWith("[") || s.contains("\"code\""));
+                    String content;
+                    if (textLike) {
+                        content = s.length() > MAX_PRINT
+                                ? s.substring(0, MAX_PRINT) + "...(截断 " + s.length() + "字)" : s;
+                    } else {
+                        content = "[binary/audio " + data.length + "B] head=" + toHex(data, 64);
+                    }
+                    log("[CRONET-TONE] code=" + code + " url=" + url + " len=" + data.length + " -> " + content);
                 }
             } catch (Throwable ignored) {
             }
+        }
+
+        private static String toHex(byte[] d, int n) {
+            StringBuilder sb = new StringBuilder();
+            int lim = Math.min(d.length, n);
+            for (int i = 0; i < lim; i++) {
+                sb.append(String.format("%02x", d[i] & 0xff));
+            }
+            return sb.toString();
         }
     }
 
