@@ -579,10 +579,14 @@ public class Main implements IXposedHookLoadPackage {
     // ==================== AudioConfig 音色数据 hook ====================
 
     private void hookAudioConfig(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
-        String cls = "com.dragon.read.component.audio.impl.api.AudioConfigApi";
-        // O()/P(): 全局音色列表(离线/在线默认) —— 注入完整音色, 让本地书播放校验通过
-        hookListInject(lpparam, cls, "P", "P", "LocalBookToneInfoConfig$ToneInfo", true);
-        hookListInject(lpparam, cls, "O", "O", "LocalBookToneInfoConfig$ToneInfo", false);
+    String cls = "com.dragon.read.component.audio.impl.api.AudioConfigApi";
+    // O()/P(): 全局音色列表(离线/在线默认) —— 注入完整音色, 让本地书播放校验通过
+    hookListInject(lpparam, cls, "P", "P", "LocalBookToneInfoConfig$ToneInfo", true);
+    hookListInject(lpparam, cls, "O", "O", "LocalBookToneInfoConfig$ToneInfo", false);
+    // w02/g.I(AudioPageInfo): 本地书 AI 音色列表 —— 真正播放校验数据源(s0 检查), 注入 ez1/e 列表
+    hookW02GI(lpparam);
+    // dialog/f.s0(AudioPageInfo): AI tab 播放前校验, 强制放行(双保险)
+    hookS0(lpparam);
         // r(bookId): 每本书的 AudioConfig(含音色列表)
         try {
             XposedHelpers.findAndHookMethod(cls, lpparam.classLoader, "r", String.class, new XC_MethodHook() {
@@ -652,6 +656,62 @@ public class Main implements IXposedHookLoadPackage {
             });
         } catch (Throwable t) {
             log("hook " + tag + " 注入失败: " + t);
+        }
+    }
+
+    /** hook w02/g.I(AudioPageInfo): 本地书返回注入的 AI 音色列表(ez1/e), 打通 s0 播放校验 */
+    private void hookW02GI(final XC_LoadPackage.LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookMethod("w02.g", lpparam.classLoader, "I",
+                    "com.dragon.read.component.audio.biz.protocol.core.data.AudioPageInfo",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                Object pageInfo = param.args[0];
+                                if (pageInfo == null) return;
+                                boolean isLocal = XposedHelpers.getBooleanField(pageInfo, "isLocalBook");
+                                if (!isLocal) return;
+                                // 本地书: 注入完整 AI 音色列表
+                                Class<?> ez1e = XposedHelpers.findClass("ez1.e", lpparam.classLoader);
+                                java.util.List<Object> list = new java.util.ArrayList<Object>();
+                                for (Object[] t : AI_TONES) {
+                                    Object item = XposedHelpers.newInstance(ez1e,
+                                            (String) t[1], (Long) t[0], (String) t[2]);
+                                    list.add(item);
+                                }
+                                param.setResult(list);
+                                log("[W02GI] 本地书注入 AI 音色 " + list.size() + " 个");
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+            log("[W02GI] hook w02/g.I 完成");
+        } catch (Throwable t) {
+            log("hook w02/g.I 失败: " + t);
+        }
+    }
+
+    /** hook dialog/f.s0(AudioPageInfo): AI tab 播放校验强制放行(双保险) */
+    private void hookS0(final XC_LoadPackage.LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookMethod("com.dragon.read.component.audio.impl.ui.dialog.f",
+                    lpparam.classLoader, "s0",
+                    "com.dragon.read.component.audio.biz.protocol.core.data.AudioPageInfo",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            if (Boolean.TRUE.equals(param.getResult())) {
+                                param.setResult(false);
+                                log("[S0] 强制放行 AI tab 播放校验");
+                            }
+                        }
+                    });
+            log("[S0] hook dialog/f.s0 完成");
+        } catch (Throwable t) {
+            log("hook dialog/f.s0 失败: " + t);
         }
     }
 
