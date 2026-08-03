@@ -296,7 +296,7 @@ public class Main implements IXposedHookLoadPackage {
             StringBuilder sb = new StringBuilder("[");
             for (Object o : list) {
                 if (sb.length() > 120) { sb.append("..."); break; }
-                String title = XposedHelpers.getStringField(o, "a");
+                String title = (String) XposedHelpers.getObjectField(o, "a");
                 long id = XposedHelpers.getLongField(o, "c");
                 sb.append(id).append(":").append(title).append(", ");
             }
