@@ -43,7 +43,7 @@ public class Main implements IXposedHookLoadPackage {
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
         if (!lpparam.packageName.equals(TARGET)) return;
 
-        log("========== TomatoRead v1.8 注入成功 ==========");
+        log("========== TomatoRead v1.9 注入成功 ==========");
         log("target=" + lpparam.packageName + " ver=" + lpparam.processName);
         loadConfig();
 
@@ -580,9 +580,9 @@ public class Main implements IXposedHookLoadPackage {
 
     private void hookAudioConfig(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
         String cls = "com.dragon.read.component.audio.impl.api.AudioConfigApi";
-        // O()/P(): 全局音色列表(离线/在线默认)
-        hookListMethod(lpparam, cls, "O", "O()");
-        hookListMethod(lpparam, cls, "P", "P()");
+        // O()/P(): 全局音色列表(离线/在线默认) —— 注入完整音色, 让本地书播放校验通过
+        hookListInject(lpparam, cls, "P", "P", "LocalBookToneInfoConfig$ToneInfo", true);
+        hookListInject(lpparam, cls, "O", "O", "LocalBookToneInfoConfig$ToneInfo", false);
         // r(bookId): 每本书的 AudioConfig(含音色列表)
         try {
             XposedHelpers.findAndHookMethod(cls, lpparam.classLoader, "r", String.class, new XC_MethodHook() {
@@ -599,17 +599,57 @@ public class Main implements IXposedHookLoadPackage {
         } catch (Throwable t) {
             log("hook r 失败: " + t);
         }
-        // v(bookId): 返回音色 ID
+        // v(bookId): 返回播放速度
         try {
             XposedHelpers.findAndHookMethod(cls, lpparam.classLoader, "v", String.class, new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     if (!cfgEnabled) return;
-                    log("[AC-v] bookId=" + param.args[0] + " -> toneId=" + param.getResult());
+                    log("[AC-v] bookId=" + param.args[0] + " -> speed=" + param.getResult());
                 }
             });
         } catch (Throwable t) {
             log("hook v 失败: " + t);
+        }
+    }
+
+    /** O()/P() 音色列表注入: P=AI音色(在线), O=离线音色 */
+    private void hookListInject(final XC_LoadPackage.LoadPackageParam lpparam, String cls, String name,
+                                String tag, String elemCls, boolean isAi) {
+        try {
+            XposedHelpers.findAndHookMethod(cls, lpparam.classLoader, name, new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                    if (!cfgEnabled) return;
+                    try {
+                        Object result = param.getResult();
+                        if (!(result instanceof java.util.List)) return;
+                        java.util.List<Object> list = (java.util.List<Object>) result;
+                        int added = 0;
+                        Object[][] tones = isAi ? AI_TONES : OFFLINE_TONES;
+                        String clsName = "com.dragon.read.component.audio.data.setting." + elemCls;
+                        for (Object[] t : tones) {
+                            long id = (Long) t[0];
+                            boolean exists = false;
+                            for (Object o : list) {
+                                try {
+                                    if (XposedHelpers.getLongField(o, "toneId") == id) { exists = true; break; }
+                                } catch (Throwable ignored) {
+                                }
+                            }
+                            if (!exists) {
+                                Object ne = XposedHelpers.newInstance(clsName, id, (String) t[1], (String) t[2]);
+                                list.add(ne);
+                                added++;
+                            }
+                        }
+                        if (added > 0) log("[AC-INJ-" + tag + "] 补全 " + added + " 个音色, 当前共 " + list.size());
+                    } catch (Throwable ignored) {
+                    }
+                }
+            });
+        } catch (Throwable t) {
+            log("hook " + tag + " 注入失败: " + t);
         }
     }
 
