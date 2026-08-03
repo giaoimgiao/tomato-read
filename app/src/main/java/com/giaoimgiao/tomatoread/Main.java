@@ -628,6 +628,7 @@ public class Main implements IXposedHookLoadPackage {
                         int added = 0;
                         Object[][] tones = isAi ? AI_TONES : OFFLINE_TONES;
                         String clsName = "com.dragon.read.component.audio.data.setting." + elemCls;
+                        Class<?> toneCls = XposedHelpers.findClass(clsName, lpparam.classLoader);
                         for (Object[] t : tones) {
                             long id = (Long) t[0];
                             boolean exists = false;
@@ -638,7 +639,7 @@ public class Main implements IXposedHookLoadPackage {
                                 }
                             }
                             if (!exists) {
-                                Object ne = XposedHelpers.newInstance(clsName, lpparam.classLoader,
+                                Object ne = XposedHelpers.newInstance(toneCls,
                                         (Long) t[0], (String) t[1], (String) t[2]);
                                 list.add(ne);
                                 added++;
