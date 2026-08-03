@@ -43,7 +43,7 @@ public class Main implements IXposedHookLoadPackage {
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
         if (!lpparam.packageName.equals(TARGET)) return;
 
-        log("========== TomatoRead v1.7 注入成功 ==========");
+        log("========== TomatoRead v1.8 注入成功 ==========");
         log("target=" + lpparam.packageName + " ver=" + lpparam.processName);
         loadConfig();
 
@@ -400,6 +400,9 @@ public class Main implements IXposedHookLoadPackage {
 
     /** 命中打印上限(每会话), 防止刷屏 */
     private static volatile int cronetHitCount = 0;
+    /** 关键接口(playinfo/toneinfo/timepoint)独立命中计数 */
+    private static volatile int cronetKeyHitCount = 0;
+    private static final int MAX_KEY_HITS = 200;
 
     /** 请求侧抓包: execute() 是所有 Cronet 请求最终入口, 按 URL 特征记录 TTS/播放请求 */
     private void hookCronetReq(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
@@ -418,10 +421,12 @@ public class Main implements IXposedHookLoadPackage {
                                 }
                             } catch (Throwable ignored) {
                             }
-                            String low = url.toLowerCase(Locale.US);
-                            if (low.contains("tts") || low.contains("audio") || low.contains("speech")
-                                    || low.contains("synthes") || low.contains("novel") || low.contains("tone")
-                                    || low.contains("fq-tts")) {
+                            String lower = url.toLowerCase(Locale.US);
+                            if (lower.contains("playinfo") || lower.contains("toneinfo")
+                                    || lower.contains("timepoint") || lower.contains("/audio/")
+                                    || lower.contains("tts") || lower.contains("speech")
+                                    || lower.contains("synthes") || lower.contains("fq-tts")
+                                    || lower.contains("tone")) {
                                 String body = "";
                                 try {
                                     Object req = XposedHelpers.getObjectField(param.thisObject, "e");
@@ -531,17 +536,22 @@ public class Main implements IXposedHookLoadPackage {
                 if (data.length == 0) return;
                 String s = new String(data, "UTF-8");
                 String lower = url.toLowerCase(Locale.US);
-                boolean hit = lower.contains("tts") || lower.contains("audio")
-                        || lower.contains("speech") || lower.contains("synthes")
-                        || lower.contains("novel") || lower.contains("tone")
-                        || lower.contains("fq-tts");
+                boolean urlHit = lower.contains("playinfo") || lower.contains("toneinfo")
+                        || lower.contains("timepoint") || lower.contains("/audio/")
+                        || lower.contains("tts") || lower.contains("speech")
+                        || lower.contains("synthes") || lower.contains("fq-tts")
+                        || lower.contains("tone");
+                boolean hit = urlHit;
                 if (!hit) {
                     for (String k : KEYS) {
                         if (s.contains(k)) { hit = true; break; }
                     }
                 }
-                if (hit && cronetHitCount < MAX_HITS) {
-                    cronetHitCount++;
+                // 关键接口(playinfo/toneinfo/timepoint)独立计数, 不被普通请求刷掉
+                boolean isKey = lower.contains("playinfo") || lower.contains("toneinfo")
+                        || lower.contains("timepoint");
+                if (hit && (isKey ? cronetKeyHitCount < MAX_KEY_HITS : cronetHitCount < MAX_HITS)) {
+                    if (isKey) cronetKeyHitCount++; else cronetHitCount++;
                     boolean textLike = s.indexOf(0) < 0 && (s.startsWith("{") || s.startsWith("[") || s.contains("\"code\""));
                     String content;
                     if (textLike) {
