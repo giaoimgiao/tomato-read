@@ -194,6 +194,17 @@ public class Main implements IXposedHookLoadPackage {
             {2L, "清亮青叔音", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E6%B8%85%E4%BA%AE%E9%9D%92%E5%8F%94%E9%9F%B3.png"},
             {6L, "温柔淑女音", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E6%B8%A9%E6%9F%94%E6%B7%91%E5%A5%B3%E9%9F%B3.png"}
     };
+    // v2.5.6: 全局 AI 音色表(AudioConfigApi.P() 播放校验数据源) —— AI_TONES + 97多角色对话升级版
+    private static final Object[][] AI_TONES_GLOBAL = {
+            {97L, "多角色对话升级版", ""},
+            {91L, "多角色对话升级版", ""},
+            {74L, "成熟大叔音升级版", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_601_uncle_pro.png"},
+            {4L, "成熟大叔音", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E6%88%90%E7%86%9F%E5%A4%A7%E5%8F%94%E9%9F%B3.png"},
+            {1L, "甜美少女音", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E7%94%9C%E7%BE%8E%E5%B0%91%E5%A5%B3%E9%9F%B3.png"},
+            {5L, "开朗青年音", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E5%BC%80%E6%9C%97%E9%9D%92%E5%B9%B4%E9%9F%B3.png"},
+            {2L, "清亮青叔音", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E6%B8%85%E4%BA%AE%E9%9D%92%E5%8F%94%E9%9F%B3.png"},
+            {6L, "温柔淑女音", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E6%B8%A9%E6%9F%94%E6%B7%91%E5%A5%B3%E9%9F%B3.png"}
+    };
     // 内置离线音色表 (来自抓包 offline_tts_tones)
     private static final Object[][] OFFLINE_TONES = {
             {118L, "成熟大叔离线版", "https://lf3-reading.fqnovelstatic.com/obj/novel-common/img_5%E6%88%90%E7%86%9F%E5%A4%A7%E5%8F%94%E9%9F%B3.png"},
@@ -1176,6 +1187,35 @@ public class Main implements IXposedHookLoadPackage {
     hookListInject(lpparam, cls, "O", "O", "LocalBookToneInfoConfig$ToneInfo", false);
     // w02/g.I(AudioPageInfo): 本地书 AI 音色列表 —— 真正播放校验数据源(s0 检查), 注入 ez1/e 列表
     hookW02GI(lpparam);
+    // v2.5.6: 诊断 —— w02/g.M/N(用户选择音色存储) + s(首次音色确认)
+    try {
+        XposedHelpers.findAndHookMethod("w02.g", lpparam.classLoader, "M", String.class, new XC_MethodHook() {
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                if (!cfgEnabled) return;
+                log("[DIAG-M] bookId=" + param.args[0] + " -> userSelectedTone=" + param.getResult());
+            }
+        });
+        XposedHelpers.findAndHookMethod("w02.g", lpparam.classLoader, "N", String.class, new XC_MethodHook() {
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                if (!cfgEnabled) return;
+                log("[DIAG-N] bookId=" + param.args[0] + " -> userSelectedToneOnline=" + param.getResult());
+            }
+        });
+        XposedHelpers.findAndHookMethod("w02.g", lpparam.classLoader, "s", String.class,
+                "com.dragon.read.rpc.model.BookToneInfo",
+                "com.dragon.read.component.audio.biz.protocol.core.data.RelativeToneModel", new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                if (!cfgEnabled) return;
+                log("[DIAG-S] 首次音色确认 bookId=" + param.args[0]);
+            }
+        });
+        log("[DIAG] hook M/N/s 完成");
+    } catch (Throwable t) {
+        log("hook M/N/s 失败: " + t);
+    }
     // dialog/f.s0(AudioPageInfo): AI tab 播放前校验, 强制放行(双保险)
     hookS0(lpparam);
     // repo/d.a(StreamTtsItemRequest): 流式TTS请求数据有效性校验, 强制有效(本地书 bookId 转 long 无效)
@@ -1225,7 +1265,7 @@ public class Main implements IXposedHookLoadPackage {
                         if (!(result instanceof java.util.List)) return;
                         java.util.List<Object> list = (java.util.List<Object>) result;
                         int added = 0;
-                        Object[][] tones = isAi ? AI_TONES : OFFLINE_TONES;
+                        Object[][] tones = isAi ? AI_TONES_GLOBAL : OFFLINE_TONES;
                         String clsName = "com.dragon.read.component.audio.data.setting." + elemCls;
                         Class<?> toneCls = XposedHelpers.findClass(clsName, lpparam.classLoader);
                         for (Object[] t : tones) {
