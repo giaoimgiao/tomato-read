@@ -49,9 +49,8 @@ jobs:
           gh release create "v${VERSION}" "TomatoRead-v${VERSION}-debug.apk" \
             --title "TomatoRead v${VERSION}" \
             --notes "番茄小说 智能朗读音色解锁模块 v${VERSION}
-
-- 本地书 AI/离线音色 UI 展示与播放放行
-- 在线书 多角色对话升级版 (TTS书注入)
-- 流式TTS 本地书 bookId 修正
-- 字幕回调修复
-- 作者QQ: 3519425997"
+          - 本地书 AI/离线音色 UI 展示与播放放行
+          - 在线书 多角色对话升级版 (TTS书注入)
+          - 流式TTS 本地书 bookId 修正
+          - 字幕回调修复
+          - 作者QQ: 3519425997"
