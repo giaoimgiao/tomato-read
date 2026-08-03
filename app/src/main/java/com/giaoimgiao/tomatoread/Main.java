@@ -768,16 +768,35 @@ public class Main implements IXposedHookLoadPackage {
                     new XC_MethodHook() {
                         @Override
                         protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                            if (!cfgEnabled) return;
+                        if (!cfgEnabled) return;
+                        try {
+                            String bookId = (String) param.args[0];
+                            String chapterId = (String) param.args[1];
+                            log("[SUB-PROV] SubtitleListProvider.c bookId=" + bookId
+                                    + " chapterId=" + chapterId + " toneId=" + param.args[2]
+                                    + " isAudio=" + param.args[3]);
+                            param.setResult(null);
+                            log("[SUB-PROV] 已短路 SubtitleListProvider.c");
+                            // v2.5: 主动回调 listener 让 UI 收尾(空字幕列表), 结束"一直加载中"
+                            // 接口 subtitle/b: a(String,Throwable)失败 / b(String)开始 / c(String,ArrayList,ChapterInfo)成功
                             try {
-                                log("[SUB-PROV] SubtitleListProvider.c bookId=" + param.args[0]
-                                        + " chapterId=" + param.args[1] + " toneId=" + param.args[2]
-                                        + " isAudio=" + param.args[3]);
-                                param.setResult(null);
-                                log("[SUB-PROV] 已短路 SubtitleListProvider.c");
-                            } catch (Throwable ignored) {
+                                Object provider = param.thisObject;
+                                Object listener = XposedHelpers.getObjectField(provider, "a");
+                                if (listener != null) {
+                                    try { XposedHelpers.callMethod(listener, "b", chapterId); } catch (Throwable ignored) {}
+                                    try { XposedHelpers.callMethod(listener, "c", chapterId, new java.util.ArrayList(), null); } catch (Throwable t) {
+                                        log("[SUB-PROV] SubtitleListProvider回调c失败: " + t);
+                                    }
+                                    log("[SUB-PROV] 已回调空字幕 chapterId=" + chapterId);
+                                } else {
+                                    log("[SUB-PROV] SubtitleListProvider listener(a)为空");
+                                }
+                            } catch (Throwable t) {
+                                log("[SUB-PROV] SubtitleListProvider回调异常: " + t);
                             }
+                        } catch (Throwable ignored) {
                         }
+                    }
                     });
             log("SubtitleListProvider.c hook 完成");
         } catch (Throwable t) {
@@ -792,15 +811,34 @@ public class Main implements IXposedHookLoadPackage {
                     new XC_MethodHook() {
                         @Override
                         protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                            if (!cfgEnabled) return;
+                        if (!cfgEnabled) return;
+                        try {
+                            String bookId = (String) param.args[0];
+                            String chapterId = (String) param.args[1];
+                            log("[SUB-PROV] TTSSubtitleProvider.g bookId=" + bookId
+                                    + " chapterId=" + chapterId + " toneId=" + param.args[2]);
+                            param.setResult(null);
+                            log("[SUB-PROV] 已短路 TTSSubtitleProvider.g");
+                            // v2.5: 主动回调 listener 让 UI 收尾(空字幕列表), 结束"一直加载中"
+                            // 接口 subtitle/d: a(String,Throwable)失败 / b(String)开始 / c(String,List)成功
                             try {
-                                log("[SUB-PROV] TTSSubtitleProvider.g bookId=" + param.args[0]
-                                        + " chapterId=" + param.args[1] + " toneId=" + param.args[2]);
-                                param.setResult(null);
-                                log("[SUB-PROV] 已短路 TTSSubtitleProvider.g");
-                            } catch (Throwable ignored) {
+                                Object provider = param.thisObject;
+                                Object listener = XposedHelpers.getObjectField(provider, "a");
+                                if (listener != null) {
+                                    try { XposedHelpers.callMethod(listener, "b", chapterId); } catch (Throwable ignored) {}
+                                    try { XposedHelpers.callMethod(listener, "c", chapterId, new java.util.ArrayList()); } catch (Throwable t) {
+                                        log("[SUB-PROV] TTSSubtitleProvider回调c失败: " + t);
+                                    }
+                                    log("[SUB-PROV] 已回调空字幕 chapterId=" + chapterId);
+                                } else {
+                                    log("[SUB-PROV] TTSSubtitleProvider listener(a)为空");
+                                }
+                            } catch (Throwable t) {
+                                log("[SUB-PROV] TTSSubtitleProvider回调异常: " + t);
                             }
+                        } catch (Throwable ignored) {
                         }
+                    }
                     });
             log("TTSSubtitleProvider.g hook 完成");
         } catch (Throwable t) {
@@ -885,7 +923,7 @@ public class Main implements IXposedHookLoadPackage {
                 "speech", "synthes", "synthesis"};
         private static final int MAX_CAP = 512 * 1024;   // 单条累积上限 512KB
         private static final int MAX_PRINT = 4000;       // 命中后打印上限
-        private static final int MAX_HITS = 60;          // 每会话命中打印上限
+        private static final int MAX_HITS = 150;         // 每会话普通命中打印上限(v2.5 60->150)
 
         private final InputStream in;
         private final String url;
@@ -946,9 +984,11 @@ public class Main implements IXposedHookLoadPackage {
                         if (s.contains(k)) { hit = true; break; }
                     }
                 }
-                // 关键接口(playinfo/toneinfo/timepoint)独立计数, 不被普通请求刷掉
+                // 关键接口(playinfo/toneinfo/timepoint/streamtts/full/batch)独立计数, 不被普通请求刷掉
+                // v2.5: streamtts 响应体必须无条件抓到(音频链路验证关键)
                 boolean isKey = lower.contains("playinfo") || lower.contains("toneinfo")
-                        || lower.contains("timepoint");
+                        || lower.contains("timepoint") || lower.contains("streamtts")
+                        || lower.contains("/full/v") || lower.contains("batch_full");
                 if (hit && (isKey ? cronetKeyHitCount < MAX_KEY_HITS : cronetHitCount < MAX_HITS)) {
                     if (isKey) cronetKeyHitCount++; else cronetHitCount++;
                     boolean textLike = s.indexOf(0) < 0 && (s.startsWith("{") || s.startsWith("[") || s.contains("\"code\""));
