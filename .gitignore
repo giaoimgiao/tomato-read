@@ -1,1 +1,10 @@
-Ki5pbWwKLmdyYWRsZS8KL2xvY2FsLnByb3BlcnRpZXMKLy5pZGVhLwouRFNfU3RvcmUKL2J1aWxkLwovYXBwL2J1aWxkLwovY2FwdHVyZXMvCi5leHRlcm5hbE5hdGl2ZUJ1aWxkLwouY3h4Lw==
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/app/build/
+/captures/
+.externalNativeBuild/
+.cxx/

@@ -1,1 +1,39 @@
-cGx1Z2lucyB7CiAgICBpZCAnY29tLmFuZHJvaWQuYXBwbGljYXRpb24nCn0KYW5kcm9pZCB7CiAgICBuYW1lc3BhY2UgJ2NvbS5naWFvaW1naWFvLnRvbWF0b3JlYWQnCiAgICBjb21waWxlU2RrIDM0CiAgICBkZWZhdWx0Q29uZmlnIHsKICAgICAgICBhcHBsaWNhdGlvbklkICdjb20uZ2lhb2ltZ2lhby50b21hdG9yZWFkJwogICAgICAgIG1pblNkayAyNgogICAgICAgIHRhcmdldFNkayAzNAogICAgICAgIHZlcnNpb25Db2RlIDYKICAgICAgICB2ZXJzaW9uTmFtZSAiMS42IgogICAgfQogICAgc2lnbmluZ0NvbmZpZ3MgewogICAgICAgIGRlYnVnIHsKICAgICAgICAgICAgc3RvcmVGaWxlIGZpbGUoJy4uL2tleXN0b3JlL2RlYnVnLmtleXN0b3JlJykKICAgICAgICAgICAgc3RvcmVQYXNzd29yZCAnYW5kcm9pZCcKICAgICAgICAgICAga2V5QWxpYXMgJ2FuZHJvaWRkZWJ1Z2tleScKICAgICAgICAgICAga2V5UGFzc3dvcmQgJ2FuZHJvaWQnCiAgICAgICAgfQogICAgfQogICAgYnVpbGRUeXBlcyB7CiAgICAgICAgZGVidWcgewogICAgICAgICAgICBzaWduaW5nQ29uZmlnIHNpZ25pbmdDb25maWdzLmRlYnVnCiAgICAgICAgfQogICAgICAgIHJlbGVhc2UgewogICAgICAgICAgICBtaW5pZnlFbmFibGVkIGZhbHNlCiAgICAgICAgICAgIHNpZ25pbmdDb25maWcgc2lnbmluZ0NvbmZpZ3MuZGVidWcKICAgICAgICB9CiAgICB9CiAgICBjb21waWxlT3B0aW9ucyB7CiAgICAgICAgc291cmNlQ29tcGF0aWJpbGl0eSBKYXZhVmVyc2lvbi5WRVJTSU9OXzE3CiAgICAgICAgdGFyZ2V0Q29tcGF0aWJpbGl0eSBKYXZhVmVyc2lvbi5WRVJTSU9OXzE3CiAgICAgICAgZW5jb2RpbmcgJ1VURi04JwogICAgfQp9CmRlcGVuZGVuY2llcyB7CiAgICBjb21waWxlT25seSBmaWxlcygnbGlicy9YcG9zZWRCcmlkZ2VBcGktODIuamFyJykKfQ==
+plugins {
+    id 'com.android.application'
+}
+android {
+    namespace 'com.giaoimgiao.tomatoread'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'com.giaoimgiao.tomatoread'
+        minSdk 26
+        targetSdk 34
+        versionCode 6
+        versionName "1.6"
+    }
+    signingConfigs {
+        debug {
+            storeFile file('../keystore/debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        encoding 'UTF-8'
+    }
+}
+dependencies {
+    compileOnly files('libs/XposedBridgeApi-82.jar')
+}

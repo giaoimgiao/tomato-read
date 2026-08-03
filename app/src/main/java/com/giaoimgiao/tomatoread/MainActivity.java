@@ -1,1 +1,94 @@
-cGFja2FnZSBjb20uZ2lhb2ltZ2lhby50b21hdG9yZWFkOwoKaW1wb3J0IGFuZHJvaWQuYXBwLkFjdGl2aXR5OwppbXBvcnQgYW5kcm9pZC5vcy5CdW5kbGU7CmltcG9ydCBhbmRyb2lkLnZpZXcuR3Jhdml0eTsKaW1wb3J0IGFuZHJvaWQudmlldy5WaWV3OwppbXBvcnQgYW5kcm9pZC53aWRnZXQuQnV0dG9uOwppbXBvcnQgYW5kcm9pZC53aWRnZXQuTGluZWFyTGF5b3V0OwppbXBvcnQgYW5kcm9pZC53aWRnZXQuU2Nyb2xsVmlldzsKaW1wb3J0IGFuZHJvaWQud2lkZ2V0LlRleHRWaWV3OwppbXBvcnQgYW5kcm9pZC53aWRnZXQuVG9hc3Q7CgppbXBvcnQgamF2YS5pby5CdWZmZXJlZFJlYWRlcjsKaW1wb3J0IGphdmEuaW8uRmlsZTsKaW1wb3J0IGphdmEuaW8uRmlsZUlucHV0U3RyZWFtOwppbXBvcnQgamF2YS5pby5GaWxlT3V0cHV0U3RyZWFtOwppbXBvcnQgamF2YS5pby5JbnB1dFN0cmVhbVJlYWRlcjsKCi8qKgogKiBUb21hdG9SZWFkIHYxLjAg4oCU4oCUIOaooeWdl+iuvue9rueVjOmdogogKiDphY3nva46IC9zZGNhcmQvRG93bmxvYWQvdG9tYXRvcmVhZC5jb25mIChlbmFibGVkPTEvMCkKICovCnB1YmxpYyBjbGFzcyBNYWluQWN0aXZpdHkgZXh0ZW5kcyBBY3Rpdml0eSB7CgogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwgU3RyaW5nIENPTkZfUEFUSCA9ICIvc2RjYXJkL0Rvd25sb2FkL3RvbWF0b3JlYWQuY29uZiI7CgogICAgQE92ZXJyaWRlCiAgICBwcm90ZWN0ZWQgdm9pZCBvbkNyZWF0ZShCdW5kbGUgc2F2ZWRJbnN0YW5jZVN0YXRlKSB7CiAgICAgICAgc3VwZXIub25DcmVhdGUoc2F2ZWRJbnN0YW5jZVN0YXRlKTsKICAgICAgICBTY3JvbGxWaWV3IHN2ID0gbmV3IFNjcm9sbFZpZXcodGhpcyk7CiAgICAgICAgTGluZWFyTGF5b3V0IHJvb3QgPSBuZXcgTGluZWFyTGF5b3V0KHRoaXMpOwogICAgICAgIHJvb3Quc2V0T3JpZW50YXRpb24oTGluZWFyTGF5b3V0LlZFUlRJQ0FMKTsKICAgICAgICByb290LnNldFBhZGRpbmcoMzIsIDMyLCAzMiwgMzIpOwogICAgICAgIHN2LmFkZFZpZXcocm9vdCk7CgogICAgICAgIFRleHRWaWV3IHRpdGxlID0gbmV3IFRleHRWaWV3KHRoaXMpOwogICAgICAgIHRpdGxlLnNldFRleHQoIueVquiMhFNob3cg5pm66IO95pyX6K+76Z+z6Imy6Kej6ZSBIik7CiAgICAgICAgdGl0bGUuc2V0VGV4dFNpemUoMjApOwogICAgICAgIHRpdGxlLnNldEdyYXZpdHkoR3Jhdml0eS5DRU5URVIpOwogICAgICAgIHJvb3QuYWRkVmlldyh0aXRsZSk7CgogICAgICAgIFRleHRWaWV3IHRpcCA9IG5ldyBUZXh0Vmlldyh0aGlzKTsKICAgICAgICB0aXAuc2V0VGV4dCgidjEuMCDmipPljIXniYhcblxu55uu5qCHOiDnlarojITlsI/or7QgY29tLmRyYWdvbi5yZWFkXG5cbuW9k+WJjemYtuautTog5oqT5Y+W5pm66IO95pyX6K+76Z+z6Imy5YiX6KGo5o6l5Y+jXG4odHRzX3RvbmVzIC8gb2ZmbGluZV90dHNfdG9uZXMpXG5cbuaXpeW/lzogL3NkY2FyZC9Eb3dubG9hZC90b21hdG9yZWFkLmxvZ1xuXG7mk43kvZw6IOaJk+W8gOS7u+aEj+WcqOe6v+S5piDihpIg5pm66IO95pyX6K+7XG7ihpIg6Z+z6Imy5YiX6KGo6aG15YGc55WZ5Yeg56eSXG5cbuaKk+WMheWujOaIkOWQjuWRiuivieaIkSwg5oiR5Lya5YiG5p6Q5pWw5o2uXG7lubblrp7njrDmnKzlnLDkuablnKjnur/pn7PoibLop6PplIHjgIIiKTsKICAgICAgICB0aXAuc2V0VGV4dFNpemUoMTMpOwogICAgICAgIHRpcC5zZXRQYWRkaW5nKDAsIDE2LCAwLCAyNCk7CiAgICAgICAgcm9vdC5hZGRWaWV3KHRpcCk7CgogICAgICAgIGZpbmFsIEJ1dHRvbiB0b2dnbGUgPSBuZXcgQnV0dG9uKHRoaXMpOwogICAgICAgIHRvZ2dsZS5zZXRUZXh0KGlzRW5hYmxlZCgpID8gIuW9k+WJjeeKtuaAgTog5bey5ZCv55SoICjngrnlh7vlhbPpl60pIiA6ICLlvZPliY3nirbmgIE6IOW3suemgeeUqCAo54K55Ye75ZCv55SoKSIpOwogICAgICAgIHRvZ2dsZS5zZXRPbkNsaWNrTGlzdGVuZXIobmV3IFZpZXcuT25DbGlja0xpc3RlbmVyKCkgewogICAgICAgICAgICBAT3ZlcnJpZGUKICAgICAgICAgICAgcHVibGljIHZvaWQgb25DbGljayhWaWV3IHYpIHsKICAgICAgICAgICAgICAgIGJvb2xlYW4gZW4gPSAhaXNFbmFibGVkKCk7CiAgICAgICAgICAgICAgICBzZXRFbmFibGVkKGVuKTsKICAgICAgICAgICAgICAgIHRvZ2dsZS5zZXRUZXh0KGVuID8gIuW9k+WJjeeKtuaAgTog5bey5ZCv55SoICjngrnlh7vlhbPpl60pIiA6ICLlvZPliY3nirbmgIE6IOW3suemgeeUqCAo54K55Ye75ZCv55SoKSIpOwogICAgICAgICAgICAgICAgVG9hc3QubWFrZVRleHQoTWFpbkFjdGl2aXR5LnRoaXMsIGVuID8gIuW3suWQr+eUqCIgOiAi5bey56aB55SoIiwgVG9hc3QuTEVOR1RIX1NIT1JUKS5zaG93KCk7CiAgICAgICAgICAgIH0KICAgICAgICB9KTsKICAgICAgICByb290LmFkZFZpZXcodG9nZ2xlKTsKICAgICAgICBzZXRDb250ZW50Vmlldyhzdik7CiAgICB9CgogICAgcHJpdmF0ZSBib29sZWFuIGlzRW5hYmxlZCgpIHsKICAgICAgICB0cnkgewogICAgICAgICAgICBGaWxlIGYgPSBuZXcgRmlsZShDT05GX1BBVEgpOwogICAgICAgICAgICBpZiAoIWYuZXhpc3RzKCkpIHJldHVybiB0cnVlOwogICAgICAgICAgICBCdWZmZXJlZFJlYWRlciBiciA9IG5ldyBCdWZmZXJlZFJlYWRlcihuZXcgSW5wdXRTdHJlYW1SZWFkZXIobmV3IEZpbGVJbnB1dFN0cmVhbShmKSwgIlVURi04IikpOwogICAgICAgICAgICBTdHJpbmcgbGluZTsKICAgICAgICAgICAgd2hpbGUgKChsaW5lID0gYnIucmVhZExpbmUoKSkgIT0gbnVsbCkgewogICAgICAgICAgICAgICAgbGluZSA9IGxpbmUudHJpbSgpOwogICAgICAgICAgICAgICAgaWYgKGxpbmUuc3RhcnRzV2l0aCgiZW5hYmxlZD0iKSkgewogICAgICAgICAgICAgICAgICAgIGJyLmNsb3NlKCk7CiAgICAgICAgICAgICAgICAgICAgcmV0dXJuICEiMCIuZXF1YWxzKGxpbmUuc3Vic3RyaW5nKDgpLnRyaW0oKSk7CiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgIH0KICAgICAgICAgICAgYnIuY2xvc2UoKTsKICAgICAgICB9IGNhdGNoIChUaHJvd2FibGUgaWdub3JlZCkgewogICAgICAgIH0KICAgICAgICByZXR1cm4gdHJ1ZTsKICAgIH0KCiAgICBwcml2YXRlIHZvaWQgc2V0RW5hYmxlZChib29sZWFuIGVuKSB7CiAgICAgICAgdHJ5IHsKICAgICAgICAgICAgRmlsZSBmID0gbmV3IEZpbGUoQ09ORl9QQVRIKTsKICAgICAgICAgICAgaWYgKGYuZ2V0UGFyZW50RmlsZSgpICE9IG51bGwpIGYuZ2V0UGFyZW50RmlsZSgpLm1rZGlycygpOwogICAgICAgICAgICBGaWxlT3V0cHV0U3RyZWFtIGZvcyA9IG5ldyBGaWxlT3V0cHV0U3RyZWFtKGYsIGZhbHNlKTsKICAgICAgICAgICAgZm9zLndyaXRlKCgiIyBUb21hdG9SZWFkIGNvbmZpZyBieSBnaWFvaW1naWFvXG4iICsKICAgICAgICAgICAgICAgICAgICAiIyDku5PlupM6IGh0dHBzOi8vZ2l0aHViLmNvbS9naWFvaW1naWFvL3RvbWF0by1yZWFkXG4iICsKICAgICAgICAgICAgICAgICAgICAiZW5hYmxlZD0iICsgKGVuID8gIjEiIDogIjAiKSArICJcbiIpLmdldEJ5dGVzKCJVVEYtOCIpKTsKICAgICAgICAgICAgZm9zLmNsb3NlKCk7CiAgICAgICAgfSBjYXRjaCAoVGhyb3dhYmxlIGlnbm9yZWQpIHsKICAgICAgICB9CiAgICB9Cn0=
+package com.giaoimgiao.tomatoread;
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStreamReader;
+
+/**
+ * TomatoRead v1.0 —— 模块设置界面
+ * 配置: /sdcard/Download/tomatoread.conf (enabled=1/0)
+ */
+public class MainActivity extends Activity {
+
+    private static final String CONF_PATH = "/sdcard/Download/tomatoread.conf";
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        ScrollView sv = new ScrollView(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(32, 32, 32, 32);
+        sv.addView(root);
+
+        TextView title = new TextView(this);
+        title.setText("番茄Show 智能朗读音色解锁");
+        title.setTextSize(20);
+        title.setGravity(Gravity.CENTER);
+        root.addView(title);
+
+        TextView tip = new TextView(this);
+        tip.setText("v1.0 抓包版\n\n目标: 番茄小说 com.dragon.read\n\n当前阶段: 抓取智能朗读音色列表接口\n(tts_tones / offline_tts_tones)\n\n日志: /sdcard/Download/tomatoread.log\n\n操作: 打开任意在线书 → 智能朗读\n→ 音色列表页停留几秒\n\n抓包完成后告诉我, 我会分析数据\n并实现本地书在线音色解锁。");
+        tip.setTextSize(13);
+        tip.setPadding(0, 16, 0, 24);
+        root.addView(tip);
+
+        final Button toggle = new Button(this);
+        toggle.setText(isEnabled() ? "当前状态: 已启用 (点击关闭)" : "当前状态: 已禁用 (点击启用)");
+        toggle.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                boolean en = !isEnabled();
+                setEnabled(en);
+                toggle.setText(en ? "当前状态: 已启用 (点击关闭)" : "当前状态: 已禁用 (点击启用)");
+                Toast.makeText(MainActivity.this, en ? "已启用" : "已禁用", Toast.LENGTH_SHORT).show();
+            }
+        });
+        root.addView(toggle);
+        setContentView(sv);
+    }
+
+    private boolean isEnabled() {
+        try {
+            File f = new File(CONF_PATH);
+            if (!f.exists()) return true;
+            BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(f), "UTF-8"));
+            String line;
+            while ((line = br.readLine()) != null) {
+                line = line.trim();
+                if (line.startsWith("enabled=")) {
+                    br.close();
+                    return !"0".equals(line.substring(8).trim());
+                }
+            }
+            br.close();
+        } catch (Throwable ignored) {
+        }
+        return true;
+    }
+
+    private void setEnabled(boolean en) {
+        try {
+            File f = new File(CONF_PATH);
+            if (f.getParentFile() != null) f.getParentFile().mkdirs();
+            FileOutputStream fos = new FileOutputStream(f, false);
+            fos.write(("# TomatoRead config by giaoimgiao\n" +
+                    "# 仓库: https://github.com/giaoimgiao/tomato-read\n" +
+                    "enabled=" + (en ? "1" : "0") + "\n").getBytes("UTF-8"));
+            fos.close();
+        } catch (Throwable ignored) {
+        }
+    }
+}
