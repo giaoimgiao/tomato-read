@@ -43,7 +43,7 @@ public class Main implements IXposedHookLoadPackage {
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
         if (!lpparam.packageName.equals(TARGET)) return;
 
-        log("========== TomatoRead v1.9 注入成功 ==========");
+        log("========== TomatoRead v2.2 注入成功 ==========");
         log("target=" + lpparam.packageName + " ver=" + lpparam.processName);
         loadConfig();
 
@@ -82,6 +82,18 @@ public class Main implements IXposedHookLoadPackage {
             log("ToneInject hook 完成");
         } catch (Throwable t) {
             log("ToneInject hook 失败: " + t);
+        }
+        try {
+            hookSubtitleChain(lpparam);
+            log("SubtitleChain hook 完成");
+        } catch (Throwable t) {
+            log("SubtitleChain hook 失败: " + t);
+        }
+        try {
+            hookCronetResp(lpparam);
+            log("CronetResp hook 完成");
+        } catch (Throwable t) {
+            log("CronetResp hook 失败: " + t);
         }
         try {
             hookWebView(lpparam);
@@ -448,7 +460,225 @@ public class Main implements IXposedHookLoadPackage {
     }
 
 
-    private void hookCronetTee(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
+    /** 响应码抓取: c.execute() after 记录 TTS/playinfo/full 相关请求的服务端响应码 */
+    private void hookCronetResp(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
+        XposedHelpers.findAndHookMethod(
+                "com.bytedance.frameworks.baselib.network.http.cronet.impl.c",
+                lpparam.classLoader, "execute", new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        if (!cfgEnabled) return;
+                        try {
+                            String url = "";
+                            try {
+                                Object req = XposedHelpers.getObjectField(param.thisObject, "e");
+                                if (req != null) url = String.valueOf(XposedHelpers.callMethod(req, "getUrl"));
+                            } catch (Throwable ignored) {
+                            }
+                            String lower = url.toLowerCase(Locale.US);
+                            if (lower.contains("tts") || lower.contains("playinfo")
+                                    || lower.contains("full") || lower.contains("toneinfo")) {
+                                Object r = param.getResult();
+                                String info = r == null ? "null" : r.getClass().getSimpleName();
+                                int code = -1;
+                                try { code = (Integer) XposedHelpers.callMethod(r, "code"); } catch (Throwable ignored) {}
+                                if (code < 0) { try { code = (Integer) XposedHelpers.callMethod(r, "getCode"); } catch (Throwable ignored) {} }
+                                log("[CRONET-RESP] url=" + url + " code=" + code + " ret=" + info);
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                });
+    }
+
+    // ==================== v2.2 字幕链路破解 ====================
+
+    /**
+     * 字幕加载失败链路(已100%破解):
+     * AiTtsSubtitleDataCacher.h() -> Observable.zip(
+     *   ASR: readerChapterService.k(d) -> ChapterOriginalContentHelper.h() -> ... -> i(bookId,chapterId,AudioBookASR)
+     *        -> NumberUtils.parse(bookId)==0(本地书) -> 抛 ErrorCodeException(-4007) -> 不发 /reading/reader/full/v 请求
+     *   TTS同步: readerTtsSyncService.t(b) -> AudioSyncReaderCacheMgr.v() -> 内存/磁盘缓存(无网络)
+     * ) 任一 error -> 字幕加载失败
+     * v2.2 实验: 记录各环节参数 + 本地书时 ASR 强制放行(改 bookId=1) + h() 替换返回跳过字幕加载
+     */
+    private void hookSubtitleChain(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
+        // 1. ASR 章节内容请求构造点(本地拦截根因): ChapterOriginalContentHelper.i(bookId, chapterId, FullReqType)
+        try {
+            Class<?> reqTypeCls = XposedHelpers.findClass(
+                    "readersaas.com.dragon.read.saas.rpc.model.FullReqType", lpparam.classLoader);
+            XposedHelpers.findAndHookMethod(
+                    "com.dragon.read.reader.utils.ChapterOriginalContentHelper",
+                    lpparam.classLoader, "i",
+                    String.class, String.class, reqTypeCls, new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                String bookId = String.valueOf(param.args[0]);
+                                String chapterId = String.valueOf(param.args[1]);
+                                log("[ASR-REQ] bookId=" + bookId + " chapterId=" + chapterId
+                                        + " reqType=" + param.args[2]);
+                                long b = parseLongSafe(bookId);
+                                long c = parseLongSafe(chapterId);
+                                if (b == 0) { param.args[0] = "1"; log("[ASR-REQ] bookId=0 -> 强制改1放行"); }
+                                if (c == 0) { param.args[1] = "1"; log("[ASR-REQ] chapterId=0 -> 强制改1放行"); }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+            log("ASR hook 完成");
+        } catch (Throwable t) {
+            log("ASR hook 失败: " + t);
+        }
+
+        // 2. RPC full/v 请求构造点: b04/a.m(FullRequest) 记录请求参数(确认通道)
+        try {
+            Class<?> fullReqCls = XposedHelpers.findClass(
+                    "readersaas.com.dragon.read.saas.rpc.model.FullRequest", lpparam.classLoader);
+            XposedHelpers.findAndHookMethod("b04.a", lpparam.classLoader, "m",
+                    fullReqCls, new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                Object req = param.args[0];
+                                log("[RPC-FULL] bookId=" + getFieldStr(req, "bookId")
+                                        + " itemId=" + getFieldStr(req, "itemId")
+                                        + " reqType=" + getFieldStr(req, "reqType"));
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+            log("RPC-FULL hook 完成");
+        } catch (Throwable t) {
+            log("RPC-FULL hook 失败: " + t);
+        }
+
+        // 3. 字幕加载入口: AiTtsSubtitleDataCacher.h(bookId, chapterId, toneId, isX)
+        //    记录参数 + 替换返回 Observable.just(true) 跳过字幕加载(本地书 ASR 必失败)
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "com.dragon.read.component.audio.impl.ui.page.viewmodel.AiTtsSubtitleDataCacher",
+                    lpparam.classLoader, "h",
+                    String.class, String.class, long.class, boolean.class, new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                log("[SUB-REQ] bookId=" + param.args[0] + " chapterId=" + param.args[1]
+                                        + " toneId=" + param.args[2] + " isX=" + param.args[3]);
+                            } catch (Throwable ignored) {
+                            }
+                        }
+
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                log("[SUB-HOOK] 替换返回 -> Observable.just(true) (跳过字幕加载)");
+                                param.setResult(io.reactivex.Observable.just(Boolean.TRUE));
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+            log("SUB hook 完成");
+        } catch (Throwable t) {
+            log("SUB hook 失败: " + t);
+        }
+
+        // 4. zip 消费点: AiTtsSubtitleDataCacher$a.a(ChapterInfo, ChapterAudioSyncReaderModel)
+        //    若被调用说明 h() 替换未生效(仍走原 zip); 记录验证
+        try {
+            Class<?> ciCls = XposedHelpers.findClass(
+                    "com.dragon.read.reader.download.ChapterInfo", lpparam.classLoader);
+            Class<?> armCls = XposedHelpers.findClass(
+                    "com.dragon.read.component.audio.data.audiosync.ChapterAudioSyncReaderModel", lpparam.classLoader);
+            XposedHelpers.findAndHookMethod(
+                    "com.dragon.read.component.audio.impl.ui.page.viewmodel.AiTtsSubtitleDataCacher$a",
+                    lpparam.classLoader, "a", ciCls, armCls, new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                Object ci = param.args[0];
+                                String content = ci == null ? "" : String.valueOf(getFieldStr(ci, "content"));
+                                if (content.length() > 80) content = content.substring(0, 80) + "...";
+                                log("[SUB-ZIP] content=" + content
+                                        + " audioModel=" + (param.args[1] == null ? "" : param.args[1].getClass().getSimpleName()));
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+            log("SUB-ZIP hook 完成");
+        } catch (Throwable t) {
+            log("SUB-ZIP hook 失败: " + t);
+        }
+
+        // 5. TTS同步入口: AudioSyncReaderCacheMgr.v(hz1/b) 记录参数(确认本地书传入值)
+        try {
+            Class<?> hz1bCls = XposedHelpers.findClass("hz1.b", lpparam.classLoader);
+            XposedHelpers.findAndHookMethod(
+                    "com.dragon.read.reader.audiosync.cache.AudioSyncReaderCacheMgr",
+                    lpparam.classLoader, "v", hz1bCls, new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                Object b = param.args[0];
+                                log("[TTS-SYNC] a=" + getFieldStr(b, "a")
+                                        + " b=" + getFieldStr(b, "b")
+                                        + " c=" + getFieldLong(b, "c")
+                                        + " j=" + getFieldBool(b, "j")
+                                        + " k=" + getFieldBool(b, "k"));
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+            log("TTS-SYNC hook 完成");
+        } catch (Throwable t) {
+            log("TTS-SYNC hook 失败: " + t);
+        }
+    }
+
+    private static long parseLongSafe(String s) {
+        try {
+            String t = s == null ? "" : s.trim();
+            if (t.isEmpty()) return 0L;
+            return Long.parseLong(t);
+        } catch (Throwable t) {
+            return 0L;
+        }
+    }
+
+    private static String getFieldStr(Object o, String name) {
+        try {
+            Object v = XposedHelpers.getObjectField(o, name);
+            return String.valueOf(v);
+        } catch (Throwable t) {
+            return "?";
+        }
+    }
+
+    private static long getFieldLong(Object o, String name) {
+        try {
+            Object v = XposedHelpers.getObjectField(o, name);
+            if (v instanceof Number) return ((Number) v).longValue();
+            return 0L;
+        } catch (Throwable t) {
+            return -1L;
+        }
+    }
+
+    private static boolean getFieldBool(Object o, String name) {
+        try {
+            Object v = XposedHelpers.getObjectField(o, name);
+            return v instanceof Boolean && (Boolean) v;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
         // c$a 实现 TypedInput, in() 是 Cronet 响应真实字节出口; 字段 a 是 HttpURLConnection 可拿 URL/响应码
         XposedHelpers.findAndHookMethod(
                 "com.bytedance.frameworks.baselib.network.http.cronet.impl.c$a",
