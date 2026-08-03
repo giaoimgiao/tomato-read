@@ -60,6 +60,12 @@ public class Main implements IXposedHookLoadPackage {
             log("AudioConfig hook 失败: " + t);
         }
         try {
+            hookRpc(lpparam);
+            log("RPC hook 完成");
+        } catch (Throwable t) {
+            log("RPC hook 失败: " + t);
+        }
+        try {
             hookWebView(lpparam);
             log("WebView hook 完成");
         } catch (Throwable t) {
@@ -101,6 +107,34 @@ public class Main implements IXposedHookLoadPackage {
                 });
     }
 
+        // ==================== RPC 响应 hook (SsResponse.body 万能抓包点) ====================
+
+    private void hookRpc(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
+        // SsResponse.body(): 所有 RPC 响应模型被读取时触发
+        XposedHelpers.findAndHookMethod("com.bytedance.retrofit2.SsResponse", lpparam.classLoader,
+                "body", new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        if (!cfgEnabled) return;
+                        try {
+                            Object body = param.getResult();
+                            if (body == null) return;
+                            String cn = body.getClass().getName();
+                            String dump = dumpObject(body, 0);
+                            // 音色相关模型完整打印, 其他只打印类名+大小
+                            if (cn.toLowerCase().contains("tone") || cn.toLowerCase().contains("tts")
+                                    || cn.toLowerCase().contains("speaker") || cn.toLowerCase().contains("audio")
+                                    || dump.contains("ttsTones") || dump.contains("ToneInfo")) {
+                                log("[RPC-TONE] " + cn + " -> " + dump);
+                            } else {
+                                log("[RPC] " + cn + " (" + dump.length() + "字)");
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                });
+    }
+
     // ==================== AudioConfig 音色数据 hook ====================
 
     private void hookAudioConfig(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
@@ -115,7 +149,10 @@ public class Main implements IXposedHookLoadPackage {
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     if (!cfgEnabled) return;
                     Object result = param.getResult();
-                    log("[AC-r] bookId=" + param.args[0] + " -> " + dumpObject(result, 0));
+                    // 精简: 只打印 bookId 和结果类名/大小, 避免刷屏
+                    String dump = dumpObject(result, 0);
+                    log("[AC-r] bookId=" + param.args[0] + " -> " + result.getClass().getSimpleName()
+                            + "(" + dump.length() + "字)" + (dump.contains("tone") || dump.contains("Tone") ? " [含Tone字段!]" : ""));
                 }
             });
         } catch (Throwable t) {
