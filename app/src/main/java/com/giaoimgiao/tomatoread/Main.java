@@ -111,6 +111,12 @@ public class Main implements IXposedHookLoadPackage {
         } catch (Throwable t) {
             log("WebView hook 失败: " + t);
         }
+        try {
+            hookOnlineToneInject(lpparam);
+            log("OnlineTone hook 完成");
+        } catch (Throwable t) {
+            log("OnlineTone hook 失败: " + t);
+        }
         log("全部 hook 注册完毕");
     }
 
@@ -300,6 +306,84 @@ public class Main implements IXposedHookLoadPackage {
     }
 
     // ==================== 本地书音色解锁 (LocalPageInfoRepo.X + showAiTone 开关) ====================
+
+    /** v2.5.4: 在线书音色列表注入97(多角色对话升级版) —— 成绩不达标的书 ttsTones 缺97, 强制补上 */
+    private void hookOnlineToneInject(final XC_LoadPackage.LoadPackageParam lpparam) {
+        // 1. RelativeToneModel.parse(BookToneInfo) —— 音色模型解析主入口
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "com.dragon.read.component.audio.biz.protocol.core.data.RelativeToneModel",
+                    lpparam.classLoader, "parse", "com.dragon.read.rpc.model.BookToneInfo",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                injectTone97(param.args[0]);
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+            log("RelativeToneModel.parse hook 完成");
+        } catch (Throwable t) {
+            log("RelativeToneModel.parse hook 失败: " + t);
+        }
+        // 2/3. 两个 UI 仓库数据源: a$c$a.a(BookToneInfoResponse) / j$c$a.a(BookToneInfoResponse)
+        for (String clsName : new String[]{
+                "com.dragon.read.component.audio.impl.ui.repo.datasource.a$c$a",
+                "com.dragon.read.component.audio.impl.ui.repo.datasource.j$c$a"}) {
+            try {
+                XposedHelpers.findAndHookMethod(clsName, lpparam.classLoader, "a",
+                        "com.dragon.read.rpc.model.BookToneInfoResponse", new XC_MethodHook() {
+                            @Override
+                            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                                if (!cfgEnabled) return;
+                                try {
+                                    Object resp = param.args[0];
+                                    if (resp == null) return;
+                                    injectTone97(XposedHelpers.getObjectField(resp, "data"));
+                                } catch (Throwable ignored) {
+                                }
+                            }
+                        });
+                log(clsName + " hook 完成");
+            } catch (Throwable t) {
+                log(clsName + " hook 失败: " + t);
+            }
+        }
+    }
+
+    /** 向 BookToneInfo.ttsTones 注入 97(多角色对话升级版), 缺失时才注入 */
+    private static void injectTone97(Object info) {
+        if (info == null) return;
+        try {
+            java.util.List list = (java.util.List) XposedHelpers.getObjectField(info, "ttsTones");
+            if (list == null) {
+                list = new java.util.ArrayList();
+                XposedHelpers.setObjectField(info, "ttsTones", list);
+            }
+            boolean has97 = false;
+            for (Object t : list) {
+                try {
+                    if (XposedHelpers.getLongField(t, "id") == 97L) { has97 = true; break; }
+                } catch (Throwable ignored) {
+                }
+            }
+            if (!has97) {
+                Class<?> cls = info.getClass().getClassLoader().loadClass("com.dragon.read.rpc.model.TtsToneInfo");
+                Object tone = XposedHelpers.newInstance(cls);
+                XposedHelpers.setLongField(tone, "id", 97L);
+                XposedHelpers.setObjectField(tone, "title", "多角色对话升级版");
+                XposedHelpers.setBooleanField(tone, "isMultiTone", true);
+                XposedHelpers.setLongField(tone, "parentToneId", 51L);
+                XposedHelpers.setObjectField(tone, "description", "自然流畅");
+                list.add(tone);
+                log("[ONLINE-TONE] 已注入97多角色对话升级版, ttsTones=" + list.size());
+            }
+        } catch (Throwable t) {
+            log("[ONLINE-TONE] 注入异常: " + t);
+        }
+    }
 
     private void hookLocalBookTone(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
         // 1) showAiTone/showOfflineTone 强制开启: 返回 new LocalBookOfflineTts(true, true)
@@ -892,10 +976,11 @@ public class Main implements IXposedHookLoadPackage {
         }
     }
 
-    /** v2.5: 从 TypedByteArray 提取请求体内容(getBytes 优先, 字段 bytes 次之, in() 流兜底) */
+    /** v2.5: 从 TypedByteArray 提取请求体内容(getBytes 优先, 字段 bytes 次之, in() 流兜底), gzip 自动解压 */
     private static String dumpReqBytes(Object b) {
         try {
             byte[] d = (byte[]) XposedHelpers.callMethod(b, "getBytes");
+            d = tryGunzip(d);
             if (d != null && d.length > 0) return new String(d, "UTF-8");
             log("[CRONET-REQ-BODY] getBytes 返回空 b=" + b.getClass().getName());
         } catch (Throwable t) {
@@ -903,6 +988,7 @@ public class Main implements IXposedHookLoadPackage {
         }
         try {
             byte[] d = (byte[]) XposedHelpers.getObjectField(b, "bytes");
+            d = tryGunzip(d);
             if (d != null && d.length > 0) return new String(d, "UTF-8");
             log("[CRONET-REQ-BODY] 字段bytes为空 b=" + b.getClass().getName());
         } catch (Throwable t) {
@@ -914,12 +1000,31 @@ public class Main implements IXposedHookLoadPackage {
             byte[] tmp = new byte[512];
             int n;
             while ((n = is.read(tmp)) > 0 && bos.size() < 4096) bos.write(tmp, 0, n);
-            if (bos.size() > 0) return new String(bos.toByteArray(), "UTF-8");
+            byte[] d = tryGunzip(bos.toByteArray());
+            if (d != null && d.length > 0) return new String(d, "UTF-8");
             log("[CRONET-REQ-BODY] in()流为空 b=" + b.getClass().getName());
         } catch (Throwable t) {
             log("[CRONET-REQ-BODY] in()异常: " + t);
         }
         return null;
+    }
+
+    /** v2.5.4: gzip 魔数(1f 8b)则解压(streamtts 请求体被 TTRequestCompressManager 压缩) */
+    private static byte[] tryGunzip(byte[] d) {
+        if (d == null || d.length < 2) return d;
+        if ((d[0] & 0xff) != 0x1f || (d[1] & 0xff) != 0x8b) return d;
+        try {
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            java.util.zip.GZIPInputStream gz = new java.util.zip.GZIPInputStream(
+                    new java.io.ByteArrayInputStream(d));
+            byte[] tmp = new byte[512];
+            int n;
+            while ((n = gz.read(tmp)) > 0 && bos.size() < 65536) bos.write(tmp, 0, n);
+            gz.close();
+            return bos.toByteArray();
+        } catch (Throwable t) {
+            return d;
+        }
     }
 
     private static boolean getFieldBool(Object o, String name) {
