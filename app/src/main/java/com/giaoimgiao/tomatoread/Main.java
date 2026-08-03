@@ -453,26 +453,23 @@ public class Main implements IXposedHookLoadPackage {
                                     || lower.contains("tone")) {
                                 lastCronetUrl = url;
                                 String body = "";
+                                Object bodyObj = null;
                                 try {
                                     Object req = XposedHelpers.getObjectField(param.thisObject, "e");
                                     if (req != null) {
-                                        try { body = String.valueOf(XposedHelpers.callMethod(req, "body")); } catch (Throwable ignored) {}
-                                        if (body == null || body.isEmpty()) {
-                                            try { body = String.valueOf(XposedHelpers.callMethod(req, "getBody")); } catch (Throwable ignored) {}
+                                        try { body = String.valueOf(bodyObj = XposedHelpers.callMethod(req, "body")); } catch (Throwable ignored) {}
+                                        if ((body == null || body.isEmpty()) && bodyObj == null) {
+                                            try { body = String.valueOf(bodyObj = XposedHelpers.callMethod(req, "getBody")); } catch (Throwable ignored) {}
                                         }
-                                        // v2.4: dump TypedByteArray 实际内容(请求体 JSON, 确认 book_id 字段)
-                                        if (body != null && body.startsWith("TypedByteArray")) {
+                                        // v2.5.3: 用第一次拿到的对象 dump(二次调用 body() 流被消费会返回 null)
+                                        if (bodyObj != null && body != null && body.startsWith("TypedByteArray")) {
                                             try {
-                                                Object b = XposedHelpers.callMethod(req, "body");
-                                                if (b == null) b = XposedHelpers.callMethod(req, "getBody");
-                                                if (b != null) {
-                                                    String content = dumpReqBytes(b);
-                                                    if (content != null) {
-                                                        if (content.length() > 1500) content = content.substring(0, 1500) + "...";
-                                                        log("[CRONET-REQ-BODY] " + url.substring(0, Math.min(url.length(), 120)) + " -> " + content);
-                                                    } else {
-                                                        log("[CRONET-REQ-BODY] dump失败 b=" + b.getClass().getName());
-                                                    }
+                                                String content = dumpReqBytes(bodyObj);
+                                                if (content != null) {
+                                                    if (content.length() > 1500) content = content.substring(0, 1500) + "...";
+                                                    log("[CRONET-REQ-BODY] " + url.substring(0, Math.min(url.length(), 120)) + " -> " + content);
+                                                } else {
+                                                    log("[CRONET-REQ-BODY] dump失败 b=" + bodyObj.getClass().getName());
                                                 }
                                             } catch (Throwable ignored) {
                                             }
@@ -874,6 +871,27 @@ public class Main implements IXposedHookLoadPackage {
         }
     }
 
+    /** v2.5.3: dump StreamTtsItemRequest 全部字段(对比音色请求差异) */
+    private static void dumpStreamFields(Object req) {
+        try {
+            java.lang.reflect.Field[] fs = req.getClass().getDeclaredFields();
+            StringBuilder sb = new StringBuilder();
+            for (java.lang.reflect.Field f : fs) {
+                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                try {
+                    f.setAccessible(true);
+                    Object v = f.get(req);
+                    String vs = String.valueOf(v);
+                    if (vs.length() > 200) vs = vs.substring(0, 200) + "...";
+                    sb.append(f.getName()).append("=").append(vs).append(" | ");
+                } catch (Throwable ignored) {
+                }
+            }
+            log("[STREAM-FIELDS] " + sb.toString());
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** v2.5: 从 TypedByteArray 提取请求体内容(getBytes 优先, 字段 bytes 次之, in() 流兜底) */
     private static String dumpReqBytes(Object b) {
         try {
@@ -1217,13 +1235,33 @@ public class Main implements IXposedHookLoadPackage {
                     lpparam.classLoader, "invoke", long.class,
                     new XC_MethodHook() {
                         @Override
-                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                            if (!cfgEnabled) return;
-                            try {
-                                log("[STREAM-REQ] itemId=" + param.args[0]);
-                            } catch (Throwable ignored) {
+protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                                if (!cfgEnabled) return;
+                                try {
+                                    log("[STREAM-REQ] itemId=" + param.args[0]);
+                                    // v2.5.3: dump StreamTtsItemRequest 全部字段原始值(对比 91/74 请求差异)
+                                    try {
+                                        Object req = XposedHelpers.getObjectField(param.thisObject, "this$0");
+                                        if (req == null) req = XposedHelpers.getObjectField(param.thisObject, "a");
+                                        if (req != null && req.getClass().getName().contains("InnerSegmentRepo")) {
+                                            java.lang.reflect.Field[] fs = req.getClass().getDeclaredFields();
+                                            for (java.lang.reflect.Field f : fs) {
+                                                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                                                try {
+                                                    f.setAccessible(true);
+                                                    Object v = f.get(req);
+                                                    if (v != null && v.getClass().getName().contains("StreamTtsItemRequest")) {
+                                                        dumpStreamFields(v);
+                                                    }
+                                                } catch (Throwable ignored) {
+                                                }
+                                            }
+                                        }
+                                    } catch (Throwable ignored) {
+                                    }
+                                } catch (Throwable ignored) {
+                                }
                             }
-                        }
 
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) throws Throwable {
