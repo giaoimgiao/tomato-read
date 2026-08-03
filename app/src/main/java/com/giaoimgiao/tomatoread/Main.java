@@ -1693,6 +1693,13 @@ toneId = 97L;
     }
 
     private static void log(String msg) {
+        // v2.5.8 正式版: 白名单过滤, 只保留功能状态日志, 丢弃 CRONET/RPC/PARSE 等调试输出
+        if (msg == null) return;
+        if (!(msg.contains("注入成功") || msg.contains("hook 完成") || msg.contains("hook 失败")
+                || msg.contains("hook 注册完毕") || msg.contains("target=")
+                || msg.startsWith("[INJECT-") || msg.startsWith("[ONLINE-")
+                || msg.startsWith("[W02") || msg.startsWith("[AC-INJ")
+                || msg.startsWith("[LOCAL") || msg.startsWith("[SUB-"))) return;
         String ts = new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(new Date());
         String line = "[" + ts + "] " + msg + "\n";
         synchronized (LOG_LOCK) {
