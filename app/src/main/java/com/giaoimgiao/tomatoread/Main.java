@@ -879,12 +879,16 @@ public class Main implements IXposedHookLoadPackage {
         try {
             byte[] d = (byte[]) XposedHelpers.callMethod(b, "getBytes");
             if (d != null && d.length > 0) return new String(d, "UTF-8");
-        } catch (Throwable ignored) {
+            log("[CRONET-REQ-BODY] getBytes 返回空 b=" + b.getClass().getName());
+        } catch (Throwable t) {
+            log("[CRONET-REQ-BODY] getBytes 异常: " + t + " b=" + b.getClass().getName());
         }
         try {
             byte[] d = (byte[]) XposedHelpers.getObjectField(b, "bytes");
             if (d != null && d.length > 0) return new String(d, "UTF-8");
-        } catch (Throwable ignored) {
+            log("[CRONET-REQ-BODY] 字段bytes为空 b=" + b.getClass().getName());
+        } catch (Throwable t) {
+            log("[CRONET-REQ-BODY] 字段bytes异常: " + t);
         }
         try {
             java.io.InputStream is = (java.io.InputStream) XposedHelpers.callMethod(b, "in");
@@ -893,7 +897,9 @@ public class Main implements IXposedHookLoadPackage {
             int n;
             while ((n = is.read(tmp)) > 0 && bos.size() < 4096) bos.write(tmp, 0, n);
             if (bos.size() > 0) return new String(bos.toByteArray(), "UTF-8");
-        } catch (Throwable ignored) {
+            log("[CRONET-REQ-BODY] in()流为空 b=" + b.getClass().getName());
+        } catch (Throwable t) {
+            log("[CRONET-REQ-BODY] in()异常: " + t);
         }
         return null;
     }
@@ -1239,11 +1245,12 @@ if (bookId == 0L && itemId != 0L) {
 XposedHelpers.setLongField(req, "bookId", itemId);
 log("[STREAM-REQ] 实验: bookId=0 -> 改为 itemId=" + itemId);
 }
-// v2.5.1 实验: toneId=91(多角色对话) 服务端返回 102040 TONE_NOT_AVALIABLE
-// -> 尝试 is_local_book=false, 服务端可能按数值 itemId 定位在线章节内容
-if (toneId == 91L && isLocal) {
-XposedHelpers.setBooleanField(req, "isLocalBook", false);
-log("[STREAM-REQ] 实验: toneId=91 -> isLocalBook=false");
+// v2.5.2 实验: 91(本地书多角色ID) -> 97(服务端在线书多角色ID, toneinfo实锤97=多角色对话升级版)
+// 用户在线书 97 可播(main_url正常) => 服务端认可 97, 本地书 streamtts 91 被拒(102040)可能是 ID 不对
+if (toneId == 91L) {
+XposedHelpers.setLongField(req, "toneId", 97L);
+log("[STREAM-REQ] 实验: toneId=91 -> 改为97(服务端在线书多角色ID)");
+toneId = 97L;
 }
                                 } else if (param.getThrowable() != null) {
                                     log("[STREAM-REQ] 异常: " + param.getThrowable());
