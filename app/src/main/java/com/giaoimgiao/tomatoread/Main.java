@@ -267,6 +267,91 @@ public class Main implements IXposedHookLoadPackage {
         } catch (Throwable t) {
             log("parse hook 失败: " + t);
         }
+
+        hookLocalBookTone(lpparam);
+    }
+
+    // ==================== 本地书音色解锁 (LocalPageInfoRepo.X + showAiTone 开关) ====================
+
+    private void hookLocalBookTone(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
+        // 1) showAiTone/showOfflineTone 强制开启: 返回 new LocalBookOfflineTts(true, true)
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "com.dragon.read.component.audio.impl.ui.settings.LocalBookOfflineTts$a",
+                    lpparam.classLoader, "a", new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                Class<?> cls = lpparam.classLoader.loadClass(
+                                        "com.dragon.read.component.audio.impl.ui.settings.LocalBookOfflineTts");
+                                Object forced = XposedHelpers.newInstance(cls, true, true);
+                                param.setResult(forced);
+                                log("[LOCAL] showAiTone=true showOfflineTone=true 已强制开启");
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+        } catch (Throwable t) {
+            log("LocalBookOfflineTts hook 失败: " + t);
+        }
+
+        // 2) 本地书 RelativeToneModel 构造后, 注入内置 AI/离线音色模型
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "com.dragon.read.component.audio.impl.ui.repo.datasource.LocalPageInfoRepo",
+                    lpparam.classLoader, "X", String.class, new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            if (!cfgEnabled) return;
+                            try {
+                                Object model = param.getResult();
+                                if (model == null) return;
+                                ClassLoader cl = model.getClass().getClassLoader();
+                                Class<?> ttsCls = cl.loadClass(
+                                        "com.dragon.read.component.audio.biz.protocol.core.data.RelativeToneModel$TtsToneModel");
+                                // 补 AI 在线音色
+                                java.util.List<Object> aiList = (java.util.List<Object>)
+                                        XposedHelpers.getObjectField(model, "ttsToneModels");
+                                int addedAi = 0;
+                                for (Object[] t : AI_TONES) {
+                                    long id = (Long) t[0];
+                                    if (!containsTtsModel(aiList, id)) {
+                                        aiList.add(XposedHelpers.newInstance(ttsCls, id, (String) t[1], (String) t[2]));
+                                        addedAi++;
+                                    }
+                                }
+                                // 补离线音色
+                                java.util.List<Object> offList = (java.util.List<Object>)
+                                        XposedHelpers.getObjectField(model, "offlineTtsToneModels");
+                                int addedOff = 0;
+                                for (Object[] t : OFFLINE_TONES) {
+                                    long id = (Long) t[0];
+                                    if (!containsTtsModel(offList, id)) {
+                                        offList.add(XposedHelpers.newInstance(ttsCls, id, (String) t[1], (String) t[2]));
+                                        addedOff++;
+                                    }
+                                }
+                                log("[LOCAL-X] ttsToneModels+" + addedAi + "(" + aiList.size() + ") offlineTtsToneModels+"
+                                        + addedOff + "(" + offList.size() + ")");
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+        } catch (Throwable t) {
+            log("LocalPageInfoRepo.X hook 失败: " + t);
+        }
+    }
+
+    private boolean containsTtsModel(java.util.List<Object> list, long id) {
+        if (list == null) return true;
+        for (Object o : list) {
+            try {
+                if (XposedHelpers.getLongField(o, "toneId") == id) return true;
+            } catch (Throwable ignored) {
+            }
+        }
+        return false;
     }
 
     private boolean containsTone(java.util.List<Object> list, long id) {
