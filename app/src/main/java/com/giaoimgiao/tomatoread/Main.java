@@ -558,6 +558,7 @@ public class Main implements IXposedHookLoadPackage {
         // 3. 字幕加载入口: AiTtsSubtitleDataCacher.h(bookId, chapterId, toneId, isX)
         //    记录参数 + 替换返回 Observable.just(true) 跳过字幕加载(本地书 ASR 必失败)
         try {
+            final ClassLoader cl = lpparam.classLoader;
             XposedHelpers.findAndHookMethod(
                     "com.dragon.read.component.audio.impl.ui.page.viewmodel.AiTtsSubtitleDataCacher",
                     lpparam.classLoader, "h",
@@ -577,7 +578,9 @@ public class Main implements IXposedHookLoadPackage {
                             if (!cfgEnabled) return;
                             try {
                                 log("[SUB-HOOK] 替换返回 -> Observable.just(true) (跳过字幕加载)");
-                                param.setResult(io.reactivex.Observable.just(Boolean.TRUE));
+                                Class<?> obsCls = XposedHelpers.findClass("io.reactivex.Observable", cl);
+                                Object just = XposedHelpers.callStaticMethod(obsCls, "just", Boolean.TRUE);
+                                param.setResult(just);
                             } catch (Throwable ignored) {
                             }
                         }
