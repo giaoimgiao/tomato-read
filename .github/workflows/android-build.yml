@@ -2,6 +2,8 @@ name: Build APK
 
 on:
   push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -22,11 +24,34 @@ jobs:
         with:
           gradle-version: '8.2'
 
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
+      - name: Build APK
+        run: gradle assembleDebug assembleRelease --no-daemon
 
-      - name: Upload APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: tomato-read-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tomato-read-release-apk
+          path: app/build/outputs/apk/release/*.apk
+
+      - name: Create GitHub Release (tag only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          cp app/build/outputs/apk/debug/*.apk "TomatoRead-v${VERSION}-debug.apk"
+          gh release create "v${VERSION}" "TomatoRead-v${VERSION}-debug.apk" \
+            --title "TomatoRead v${VERSION}" \
+            --notes "番茄小说 智能朗读音色解锁模块 v${VERSION}
+
+- 本地书 AI/离线音色 UI 展示与播放放行
+- 在线书 多角色对话升级版 (TTS书注入)
+- 流式TTS 本地书 bookId 修正
+- 字幕回调修复
+- 作者QQ: 3519425997"
